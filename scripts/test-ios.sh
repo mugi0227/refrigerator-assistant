@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+export GIT_LFS_SKIP_SMUDGE=1
 cd "$(dirname "$0")/.."
 node scripts/prepare-ios.mjs
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
