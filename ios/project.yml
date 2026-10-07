@@ -24,6 +24,14 @@ targets:
     info:
       path: Fridge/Info.plist
       properties:
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundlePackageType: APPL
+        CFBundleInfoDictionaryVersion: '6.0'
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: YES
         CFBundleDisplayName: 冷蔵庫の相棒
         UILaunchScreen: {}
         NSCameraUsageDescription: 食品と印字された期限をこの端末で読み取ります。画像はサーバーへ送信しません。
