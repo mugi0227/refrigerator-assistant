@@ -12,6 +12,7 @@ collect_results() {
   fi
   if [ -d ios/build-simulator/UI.xcresult ]; then
     xcrun xcresulttool get test-results summary --path ios/build-simulator/UI.xcresult > ios/build-simulator/summary.json || true
+    xcrun xcresulttool export attachments --path ios/build-simulator/UI.xcresult --output-path ios/build-simulator/screenshots || true
   fi
 }
 trap collect_results EXIT

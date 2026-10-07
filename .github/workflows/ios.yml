@@ -41,4 +41,5 @@ jobs:
             ios/build-simulator/UI.xcresult
             ios/build-simulator/app-info.plist
             ios/build-simulator/summary.json
+            ios/build-simulator/screenshots
           retention-days: 1
