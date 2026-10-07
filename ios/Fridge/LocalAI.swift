@@ -18,9 +18,9 @@ actor LocalAI {
     private var engine: Engine?
     private var busy = false
     nonisolated let cancellation = InferenceCancellation()
-    func isReady() -> Bool { engine?.isInitialized() == true }
+    func isReady() async -> Bool { guard let engine else { return false }; return await engine.isInitialized() }
 
-    func load(_ model: URL, cache: URL) throws {
+    func load(_ model: URL, cache: URL) async throws {
         guard !busy else { throw FridgeError.message("AIの処理中です。終了してから操作してください。") }
         engine = nil
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
@@ -28,7 +28,7 @@ actor LocalAI {
         let config = try EngineConfig(modelPath: model.path, backend: .cpu(threadCount: 4),
             visionBackend: .cpu(threadCount: 2), maxNumTokens: 2048, cacheDir: cache.path)
         let next = Engine(engineConfig: config)
-        try next.initialize()
+        try await next.initialize()
         engine = next
     }
 
@@ -46,7 +46,7 @@ actor LocalAI {
         let config = ConversationConfig(samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0),
             thinkingConfig: ThinkingConfig(enableThinking: false, thinkingTokenBudget: 0),
             visualTokenBudget: image == nil ? nil : 256)
-        let conversation = try engine.createConversation(with: config)
+        let conversation = try await engine.createConversation(with: config)
         cancellation.set(conversation)
         let watchdog = DispatchWorkItem { [cancellation] in cancellation.cancel() }
         DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: watchdog)

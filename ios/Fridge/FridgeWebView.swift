@@ -8,6 +8,18 @@ struct FridgeWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.setURLSchemeHandler(BundleScheme(), forURLScheme: "fridge")
+        // randomUUID is secure-context-only. The bundled custom origin still has
+        // getRandomValues, which provides the same cryptographic UUID entropy.
+        config.userContentController.addUserScript(WKUserScript(source: """
+            if (typeof crypto.randomUUID !== 'function') {
+              Object.defineProperty(crypto, 'randomUUID', { value: () => {
+                const bytes = crypto.getRandomValues(new Uint8Array(16));
+                bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+                const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0'));
+                return hex.slice(0,4).join('')+'-'+hex.slice(4,6).join('')+'-'+hex.slice(6,8).join('')+'-'+hex.slice(8,10).join('')+'-'+hex.slice(10).join('');
+              }});
+            }
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.add(context.coordinator, name: "fridge")
         let web = WKWebView(frame: .zero, configuration: config)
         web.backgroundColor = UIColor(red: 0.969, green: 0.973, blue: 0.949, alpha: 1)

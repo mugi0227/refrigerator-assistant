@@ -26,7 +26,7 @@ export class NativeGemmaVision extends GemmaVision {
     finally{this.loading=false;localStorage.removeItem('fridge-model-loading');}
   }
   cancelLoad(){if(this.progress?.phase==='downloading')nativeCall('cancelDownload').catch(()=>{});}
-  async importModel(){if(this.loading||this.busy)throw new Error('AIの処理が終了してから操作してください');this.loading=true;this.started=performance.now();this.onStatus('iOS用モデルのファイルを選んでください');
+  async importModel(){if(this.loading||this.busy)throw new Error('AIの処理が終了してから操作してください');this.loading=true;this.ready=false;this.started=performance.now();this.onStatus('iOS用モデルのファイルを選んでください');
     try{await nativeCall('importModel',{},45*60*1000);}finally{this.loading=false;}
   }
   async infer(prompt,useImage,maxOutputTokens){if(!this.ready)throw new Error('設定でGemmaを起動してください');if(this.busy)throw new Error('AIは処理中です');this.busy=true;

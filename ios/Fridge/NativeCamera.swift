@@ -4,7 +4,8 @@ import ImageIO
 import Vision
 import UIKit
 
-final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+// Capture/session state stays on queue; the shared image is protected by lock.
+final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "fridge.camera")
     private let context = CIContext(options: [.cacheIntermediates: false])
