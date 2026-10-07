@@ -1,0 +1,13 @@
+workflows:
+  fridge-ios-unsigned:
+    name: Fridge iOS for AltStore
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      xcode: latest
+      node: 22
+    scripts:
+      - name: Build native iOS app and unsigned IPA
+        script: bash scripts/build-ios.sh
+    artifacts:
+      - ios/build/ipa/Fridge-unsigned.ipa

@@ -9,3 +9,9 @@ node_modules/
 playwright-report/
 test-results/
 .DS_Store
+graphify-out/
+local/
+ios/build/
+ios/build-simulator/
+ios/Fridge/Resources/Web/
+ios/Fridge.xcodeproj/

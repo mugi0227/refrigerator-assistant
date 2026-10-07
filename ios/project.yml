@@ -1,0 +1,67 @@
+name: Fridge
+options:
+  bundleIdPrefix: jp.mugilab
+  deploymentTarget:
+    iOS: '17.0'
+packages:
+  LiteRTLM:
+    url: https://github.com/google-ai-edge/LiteRT-LM
+    exactVersion: 0.18.0
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  Fridge:
+    type: application
+    platform: iOS
+    sources:
+      - path: Fridge
+        excludes: [Resources, Info.plist]
+      - path: Fridge/Resources
+        type: folder
+        buildPhase: resources
+    info:
+      path: Fridge/Info.plist
+      properties:
+        CFBundleDisplayName: 冷蔵庫の相棒
+        UILaunchScreen: {}
+        NSCameraUsageDescription: 食品と印字された期限をこの端末で読み取ります。画像はサーバーへ送信しません。
+        UIFileSharingEnabled: YES
+        LSSupportsOpeningDocumentsInPlace: YES
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: NO
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: jp.mugilab.fridge
+        MARKETING_VERSION: 0.2.0
+        CURRENT_PROJECT_VERSION: 1
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: '1,2'
+        CODE_SIGNING_ALLOWED: NO
+    dependencies:
+      - package: LiteRTLM
+        product: LiteRTLM
+  FridgeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [FridgeUITests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: jp.mugilab.fridge.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+    dependencies:
+      - target: Fridge
+schemes:
+  Fridge:
+    build:
+      targets:
+        Fridge: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+    test:
+      config: Debug
+      targets: [FridgeUITests]

@@ -1,0 +1,39 @@
+name: iOS AltStore build
+on:
+  push:
+    branches: [codex/ios-altstore]
+    paths: ['ios/**', 'public/**', 'scripts/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fridge-ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build unsigned iPhone IPA
+        run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
+      - name: Save AltStore IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fridge-AltStore
+          path: ios/build/ipa/Fridge-unsigned.ipa
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+      - name: Check inventory persistence on iOS Simulator
+        run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
+      - name: Save diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fridge-iOS-diagnostics
+          path: |
+            device-build.log
+            simulator-test.log
+            ios/build-simulator/UI.xcresult
+          retention-days: 1
