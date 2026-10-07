@@ -39,4 +39,6 @@ jobs:
             device-build.log
             simulator-test.log
             ios/build-simulator/UI.xcresult
+            ios/build-simulator/app-info.plist
+            ios/build-simulator/summary.json
           retention-days: 1
