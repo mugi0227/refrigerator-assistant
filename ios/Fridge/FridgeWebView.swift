@@ -38,6 +38,12 @@ struct FridgeWebView: UIViewRepresentable {
         private var importing: String?
         private var loading = false
         private var active = true
+        private var cameraActive = false
+
+        private func updateIdleTimer() {
+            let disabled = active && (loading || cameraActive)
+            DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = disabled }
+        }
 
         func attach(_ web: WKWebView) {
             self.web = web
@@ -61,7 +67,7 @@ struct FridgeWebView: UIViewRepresentable {
                     case "modelStatus": reply(id, ["saved": model.saved])
                     case "loadModel":
                         guard !loading, importing == nil else { throw FridgeError.message("モデルの操作が終わってからお試しください。") }
-                        loading = true; defer { loading = false }
+                        loading = true; updateIdleTimer(); defer { loading = false; updateIdleTimer() }
                         let path = try await model.obtain()
                         guard active else { throw FridgeError.message("アプリを開いてからAIを起動してください。モデルは保存されています。") }
                         emit(["type": "modelProgress", "progress": ["phase": "initializing"]])
@@ -77,8 +83,8 @@ struct FridgeWebView: UIViewRepresentable {
                         let result = try await ai.infer(prompt: prompt, image: image, maxOutputTokens: args["maxOutputTokens"] as? Int ?? 256)
                         reply(id, result)
                     case "cancelInference": ai.cancellation.cancel(); reply(id, [:])
-                    case "cameraStart": try await camera.start(); reply(id, [:])
-                    case "cameraStop": await camera.stop(); reply(id, [:])
+                    case "cameraStart": try await camera.start(); cameraActive = true; updateIdleTimer(); reply(id, [:])
+                    case "cameraStop": await camera.stop(); cameraActive = false; updateIdleTimer(); reply(id, [:])
                     case "importModel":
                         guard !loading, importing == nil else { throw FridgeError.message("モデルの操作が終わってからお試しください。") }
                         try await ai.unload()
@@ -113,10 +119,10 @@ struct FridgeWebView: UIViewRepresentable {
             while let next = root.presentedViewController { root = next }; return root
         }
         @objc private func background() {
-            active = false; ai.cancellation.cancel()
+            active = false; cameraActive = false; updateIdleTimer(); ai.cancellation.cancel()
             Task { await camera.stop(); try? await ai.unload(); emit(["type": "engineUnloaded"]) }
         }
-        @objc private func foreground() { active = true }
+        @objc private func foreground() { active = true; updateIdleTimer() }
         @objc private func memoryWarning() { ai.cancellation.cancel(); Task { try? await ai.unload(); emit(["type": "engineUnloaded"]) } }
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
@@ -145,7 +151,7 @@ struct FridgeWebView: UIViewRepresentable {
             guard let presenter = presenter() else { completionHandler(false); return }; presenter.present(alert, animated: true)
         }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            ai.cancellation.cancel(); Task { await camera.stop(); try? await ai.unload() }; webView.reload()
+            cameraActive = false; updateIdleTimer(); ai.cancellation.cancel(); Task { await camera.stop(); try? await ai.unload() }; webView.reload()
         }
     }
 }
