@@ -157,7 +157,7 @@ struct FridgeWebView: UIViewRepresentable {
 }
 
 final class BundleScheme: NSObject, WKURLSchemeHandler {
-    private let root = Bundle.main.resourceURL!.appendingPathComponent("Resources/Web", isDirectory: true).standardizedFileURL
+    private let root = Bundle.main.resourceURL!.appendingPathComponent("Web", isDirectory: true).standardizedFileURL
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url else { return }
         let path = url.path == "/" ? "index.html" : String(url.path.dropFirst())

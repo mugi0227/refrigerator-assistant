@@ -18,7 +18,7 @@ targets:
     sources:
       - path: Fridge
         excludes: [Resources, Info.plist]
-      - path: Fridge/Resources
+      - path: Fridge/Resources/Web
         type: folder
         buildPhase: resources
     info:
