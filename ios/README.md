@@ -59,6 +59,8 @@ Windows単独ではApple公式Simulatorを動かせません。WindowsではWeb�
 
 ## 実機で確認すること
 
+v0.2.3は[Mac CIの実モデル・在庫UIテスト](https://github.com/mugi0227/refrigerator-assistant/actions/runs/37773223614)に成功しました。文章生成CPU・画像GPUの構成で、起動時の合成画像テスト、BLUE-47への回答、320px/384px JPEGへのRedの回答を確認しています。生成もGPUにした構成はSimulatorのMetalリソース制約で初期化に失敗したため、採用していません。v0.2.3の実機の食品認識・速度はまだ未確認です。
+
 まずモデルの保存・起動、次にカメラ許可、牛乳の認識と印字された期限の読み取りを確認します。野菜の数量、二重登録の抑制、消費と取り消し、再起動後の在庫保存も確認してください。Safariより動きやすい構成を目指していますが、端末ごとのメモリ・速度・発熱は実機で確認が必要です。
 
 公式資料：[LiteRT-LM Swift](https://developers.google.com/edge/litert-lm/swift)、[AltServer](https://faq.altstore.io/altstore-classic/altserver)、[AltStore Classic](https://faq.altstore.io/altstore-classic/your-altstore)。
