@@ -133,8 +133,14 @@ actor ReferenceProbe {
     static func sha256(_ url: URL) throws -> String {
         let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
         var hash = SHA256()
-        while let block = try file.read(upToCount: 4 * 1024 * 1024), !block.isEmpty {
-            try Task.checkCancellation(); hash.update(data: block)
+        // FileHandle can autorelease each NSData chunk. Drain between reads so
+        // verifying a 2.6 GB model does not temporarily retain the whole file.
+        while try autoreleasepool(invoking: { () throws -> Bool in
+            guard let block = try file.read(upToCount: 4 * 1024 * 1024), !block.isEmpty else { return false }
+            hash.update(data: block)
+            return true
+        }) {
+            try Task.checkCancellation()
         }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
