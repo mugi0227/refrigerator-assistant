@@ -69,7 +69,17 @@ Windowsで実機ログを確認するには、iPhoneをUSBで接続・ロック�
 
 v0.2.4は実機の成功例に合わせてSDK 0.15.0・生成GPU・画像CPUへ変更し、古いSDKのコンパイルキャッシュを別ディレクトリに隔離します。保存済みのモデルはそのまま使います。起動検査は合成赤色画像への回答が`red`を含むことまで確認し、失敗した場合は準備完了としません。新しい検証結果が出るまでは実機での解消を保証しません。SimulatorはSDK 0.15.0のCPU生成・CPU画像処理を検証し、実機GPUの動作はiPhoneの起動検査・食品読み取りで確認します。
 
-v0.2.4/build 5の[Mac CI](https://github.com/mugi0227/refrigerator-assistant/actions/runs/37787773816)は成功しました。実モデルのSHA256とサイズは上記と一致し、起動画像検査・BLUE-47・320px/384px JPEGへのRedの回答、再起動後の在庫保持を確認。実機用IPAには`device: Metal text + CPU vision`の構成が含まれ、ARM64・ASCII名・同一Bundle ID・ZIP CRC・バージョンを検証済みです。配布ファイルは`local/ios-v0.2.4/Fridge-0.2.4-AltStore.ipa`、証跡は同ディレクトリの`verification.json`です。アプリを削除せずAltStoreで更新し、保存済みモデルで起動して確認します。v0.2.4の実機での起動・食品認識・速度はまだ未確認です。
+v0.2.4/build 5の[Mac CI](https://github.com/mugi0227/refrigerator-assistant/actions/runs/37787773816)は成功しました。実モデルのSHA256とサイズは上記と一致し、起動画像検査・BLUE-47・320px/384px JPEGへのRedの回答、再起動後の在庫保持を確認。実機用IPAには`device: Metal text + CPU vision`の構成が含まれ、ARM64・ASCII名・同一Bundle ID・ZIP CRC・バージョンを検証済みです。
+
+同日の本人のiPhoneではv0.2.4も画像検査に失敗しました。USBログでSDK 0.15.0・実機の生成GPU/画像CPU、モデル初期化の成功、その直後の`Native sendMessage returned null`を確認しました。今回のログには内部のXNNPACKエラーが記録されておらず、[類似報告](https://github.com/google-ai-edge/LiteRT-LM/issues/2979)と同じ原因だと断定できません。証跡: `local/physical-ios-v0.2.4-diagnosis.json`。モデルの再ダウンロードは不要で、実機での画像認識は未達です。
+
+v0.2.5/build 6では公式SDK 0.15.0を維持し、公開成功例と同じ`sendMessageStream`で回答を取得します。通常の`sendMessage`のC APIはエラー時にnullを返しますが、ストリームのコールバックは内部のエラー文字列をSwiftへ伝えます。文字列を集約して既存のJSON読み取りへ渡すため、画面側の返却形式は変わりません。短い文章で生成を事前に検査してから別の会話で赤い画像を検査し、文章と画像のどちらで失敗したかを区別します。入力も公開実装と同じ文章→画像の順にします。画像数16の設定は複数画像会話用の変更で、毎回1画像の本アプリには追加しません。
+
+SwiftUIで画面本体をセーフエリア内へ配置し、背景色だけを端まで伸ばします。WKWebViewとネイティブカメラは同じコンテナ内にあるため、カメラの表示枠の座標系は維持されます。実モデルのテストには合成のMILKラベルと印字日付2026-10-31を読み、JSONの食品名・日付を照合する検査も追加しました。これは合成画像の検査で、実機の食品撮影・速度を保証するものではありません。
+
+2026/10/09、v0.2.5の[Mac CI](https://github.com/mugi0227/refrigerator-assistant/actions/runs/37796150766)は成功しました。実モデルの起動検査・BLUE-47・320px/384px画像のRed・合成ラベルの`{"food":"MILK","date":"2026-10-31"}`を確認し、在庫の保存・再起動後の保持も成功しました。Simulatorのスクリーンショットで時計とロゴの重なりが解消したことを確認。52ユニットテストとWindowsのネイティブ代替画面検証も成功しています。
+
+配布ファイルは`local/ios-v0.2.5/Fridge-0.2.5-AltStore.ipa`（約13.4MB）。ARM64・ASCII名・同一Bundle ID・ZIP CRC・版・実機用GPU生成/CPU画像の文字列・ストリームAPIと文章検査が含まれることを確認しました。証跡: 同ディレクトリの`verification.json`。アプリを削除せずAltStoreで更新し、「保存したモデルで起動」で確認します。実機での解消は未確認です。失敗した場合は文章検査か画像検査かと内部エラーが表示されるため、その画面から次の調査へ進めます。
 
 まずモデルの保存・起動、次にカメラ許可、牛乳の認識と印字された期限の読み取りを確認します。野菜の数量、二重登録の抑制、消費と取り消し、再起動後の在庫保存も確認してください。Safariより動きやすい構成を目指していますが、端末ごとのメモリ・速度・発熱は実機で確認が必要です。
 
