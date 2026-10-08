@@ -1,5 +1,6 @@
 import Foundation
 import LiteRTLM
+import UIKit
 
 enum FridgeError: LocalizedError {
     case message(String)
@@ -37,6 +38,26 @@ actor LocalAI {
         engine = nil
     }
 
+    func checkImageInference() async throws {
+        let jpeg = await MainActor.run {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            return UIGraphicsImageRenderer(size: CGSize(width: 384, height: 384), format: format).image { context in
+                UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 384, height: 384))
+            }.jpegData(compressionQuality: 0.85)!
+        }
+        // Initialization alone can succeed on a device whose vision executor fails.
+        // Check a synthetic image before reporting that scanning is ready.
+        do {
+            let result = try await infer(prompt: "Name the color of this image. Answer with one English word.", image: jpeg, maxOutputTokens: 8)
+            guard let text = result["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw FridgeError.message("画像AIから回答がありませんでした。")
+            }
+        } catch {
+            try? unload()
+            throw FridgeError.message("画像AIの起動テストに失敗しました。モデルは保存されています。\n\(error.localizedDescription)")
+        }
+    }
+
     func infer(prompt: String, image: Data?, maxOutputTokens: Int) async throws -> [String: Any] {
         guard let engine else { throw FridgeError.message("設定でGemmaを起動してください。") }
         guard !busy else { throw FridgeError.message("AIは処理中です。") }
@@ -45,7 +66,7 @@ actor LocalAI {
         defer { busy = false; cancellation.set(nil) }
         let config = ConversationConfig(samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0),
             thinkingConfig: ThinkingConfig(enableThinking: false, thinkingTokenBudget: 0),
-            visualTokenBudget: image == nil ? nil : 256)
+            visualTokenBudget: image == nil ? nil : 280)
         let conversation = try await engine.createConversation(with: config)
         cancellation.set(conversation)
         let watchdog = DispatchWorkItem { [cancellation] in cancellation.cancel() }

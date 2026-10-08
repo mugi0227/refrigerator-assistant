@@ -15,6 +15,14 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private var configured = false
     var onFrame: ((String, [[String: String]]) -> Void)?
 
+    // The display is driven by AVFoundation, independently of JPEG/AI work.
+    // Create and lay out this layer on the main thread; session work stays on queue.
+    func makePreviewLayer() -> AVCaptureVideoPreviewLayer {
+        let layer = AVCaptureVideoPreviewLayer(session: session)
+        layer.videoGravity = .resizeAspectFill
+        return layer
+    }
+
     func start() async throws {
         let granted: Bool
         switch AVCaptureDevice.authorizationStatus(for: .video) {

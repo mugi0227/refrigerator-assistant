@@ -9,5 +9,5 @@ html=html.replace('<video id="camera" playsinline muted autoplay></video>','<img
 html=html.replace('<link rel="manifest" href="./manifest.webmanifest">','');
 html=html.replace('<meta charset="UTF-8">','<meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\' fridge:; script-src \'self\' fridge:; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; connect-src https://world.openfoodfacts.org; object-src \'none\'; base-uri \'self\'; form-action \'self\'">');
 writeFileSync(index,html);
-const css=resolve(out,'styles.css');writeFileSync(css,readFileSync(css,'utf8')+'\n#camera{width:100%;height:100%;object-fit:cover;}\n.app-shell{padding-top:env(safe-area-inset-top);}\n');
+const css=resolve(out,'styles.css');writeFileSync(css,readFileSync(css,'utf8')+'\n#camera{width:100%;height:100%;object-fit:cover;}\n.app-shell{padding-top:env(safe-area-inset-top);}\n:root.native-camera-preview{background:transparent;}\n.native-camera-preview .camera-stage{background:transparent;}\n.native-camera-preview #camera{opacity:0;}\n');
 console.log('Prepared bundled iOS UI (native camera and AI; no model weights included)');

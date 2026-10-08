@@ -26,6 +26,8 @@ Safari版の在庫は自動で移りません。Safariの設定でバックア�
 - モデルはアプリのApplication Supportへ保存し、起動し直した際は再利用します。AIのメモリへの読み込みはアプリの起動時やメモリ解放後に必要です。
 - ファイル取り込みは`gemma-4-E2B-it.litertlm`用です。Google AI Edge Galleryなど別アプリ内の保存データを直接共有する機能はありません。
 - カメラはAVFoundation、バーコードはApple Vision。画像推論は端末内で行い、画像をサーバーへ送りません。
+- v0.2.2では映像の表示をAVCaptureVideoPreviewLayerへ切り替えました。AI用JPEGを約3fpsで作る処理と、画面へ映像を表示する処理を分けています。スクロール・画面サイズ変更時は表示枠を追従させ、カメラ停止・バックグラウンド移行時は隠します。
+- AIの起動後に合成テスト画像で画像推論を確認します。失敗した場合は「準備完了」にせず、エラーを設定に表示します。ダウンロード済みモデルは残ります。
 - 商品DB照会は初期OFFです。有効にした場合はOpen Food Factsへ商品コードだけ送ります。
 - AIを使わなくても手入力・在庫・買い物・バックアップは利用できます。
 
@@ -46,6 +48,14 @@ bash scripts/test-ios.sh
 ```
 
 こちらはiOS Simulatorで手入力・再起動後の在庫保存・ネイティブAIの設定表示を確認します。シミュレーターの検証では、実機のカメラや2.6GBモデルの推論速度は確認できません。
+
+```sh
+bash scripts/test-ios-runtime.sh
+```
+
+実際の2.6GBモデルを取得し、同じSwift SDKとアプリのAI実装で、起動時の画像テスト・文字列BLUE-47への回答・320px/384pxのJPEG画像認識をiOS Simulatorで検証します。画像はテスト内で作成し、写真をアップロードしません。GitHub Actionsではこの検証と在庫のUIテストが成功した場合だけIPAを配布します。
+
+Windows単独ではApple公式Simulatorを動かせません。WindowsではWeb画面・在庫処理を検証し、iOS固有部分をMacのCIでまとめて確認します。SimulatorはMacのCPU/GPUとメモリで動作するため、iPhoneのメモリ不足・カメラの速度・実機固有のランタイム不具合は保証できません。本人のiPhoneではv0.2.1のAI初期化は成功しましたが、最初の画像推論で`Failed to allocate tensors`が出ています。同様の[iOSでの報告](https://github.com/google-ai-edge/LiteRT-LM/issues/2979)があり、実機での画像推論の解消は未確認です。
 
 ## 実機で確認すること
 

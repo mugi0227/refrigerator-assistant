@@ -38,13 +38,24 @@ export class NativeGemmaVision extends GemmaVision {
   async unload(){await nativeCall('unloadModel');this.ready=false;}
 }
 export class NativeCameraScanner extends CameraScanner {
-  constructor(options){super(options);listeners.add(message=>{if(message.type!=='cameraFrame'||!this.running)return;this.video.src=`data:image/jpeg;base64,${message.jpeg}`;
-    if(!this.paused)this.handleCodes(message.codes||[]).catch(error=>this.onStatus(error.message));});}
+  constructor(options){super(options);this.previewLayout=()=>this.schedulePreviewLayout();
+    window.addEventListener('scroll',this.previewLayout,{passive:true});window.addEventListener('resize',this.previewLayout);
+    this.previewObserver=new ResizeObserver(this.previewLayout);this.previewObserver.observe(this.video.parentElement);
+    this.receiveFrame=message=>{if(message.type!=='cameraFrame'||!this.running)return;this.video.src=`data:image/jpeg;base64,${message.jpeg}`;
+    if(!this.paused)this.handleCodes(message.codes||[]).catch(error=>this.onStatus(error.message));};listeners.add(this.receiveFrame);}
   async start(mode='add',location='fridge'){await this.stop();await this.sounds.unlock();this.machine.mode=mode;this.machine.location=location;this.machine.reset();this.paused=false;this.failures=0;
-    const epoch=++this.epoch;await nativeCall('cameraStart');if(epoch!==this.epoch){await nativeCall('cameraStop');return;}this.running=true;
+    const epoch=++this.epoch,result=await nativeCall('cameraStart');if(epoch!==this.epoch){await nativeCall('cameraStop');return;}this.running=true;
+    this.nativePreview=result.nativePreview===true;document.documentElement.classList.toggle('native-camera-preview',this.nativePreview);this.schedulePreviewLayout();
     this.onStatus(this.vision.ready?'読み取り中 · iOS端末内で処理':'バーコード読み取り中 · Gemmaは未起動');
     this.timer=setInterval(()=>{if(!this.paused)this.machine.tick();},100);this.visionLoop(epoch);
   }
   capture(canvas,max=960){const w=this.video.naturalWidth,h=this.video.naturalHeight;if(!w||!h)return false;const side=Math.min(w,h)*0.8,out=Math.min(max,Math.round(side));canvas.width=out;canvas.height=out;canvas.getContext('2d').drawImage(this.video,(w-side)/2,(h-side)/2,side,side,0,0,out,out);return true;}
-  async stop(){await super.stop();if(isNative)await nativeCall('cameraStop').catch(()=>{});}
+  schedulePreviewLayout(){if(!this.nativePreview||this.layoutFrame)return;this.layoutFrame=requestAnimationFrame(()=>{
+    this.layoutFrame=0;if(!this.running||!this.nativePreview)return;
+    const stage=this.video.parentElement,rect=stage.getBoundingClientRect(),radius=parseFloat(getComputedStyle(stage).borderRadius)||0;
+    nativeCall('cameraPreviewLayout',{x:rect.x,y:rect.y,width:rect.width,height:rect.height,radius,visible:!!stage.getClientRects().length}).catch(()=>{});
+  });}
+  async stop(){document.documentElement.classList.remove('native-camera-preview');this.nativePreview=false;
+    cancelAnimationFrame(this.layoutFrame);this.layoutFrame=0;await super.stop();if(isNative)await nativeCall('cameraStop').catch(()=>{});}
+  async destroy(){await super.destroy();listeners.delete(this.receiveFrame);this.previewObserver.disconnect();window.removeEventListener('scroll',this.previewLayout);window.removeEventListener('resize',this.previewLayout);}
 }

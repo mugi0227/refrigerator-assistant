@@ -1,10 +1,11 @@
 import SwiftUI
 import WebKit
 import UniformTypeIdentifiers
+import AVFoundation
 
 struct FridgeWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> UIView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.setURLSchemeHandler(BundleScheme(), forURLScheme: "fridge")
@@ -22,18 +23,33 @@ struct FridgeWebView: UIViewRepresentable {
             """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.add(context.coordinator, name: "fridge")
         let web = WKWebView(frame: .zero, configuration: config)
-        web.backgroundColor = UIColor(red: 0.969, green: 0.973, blue: 0.949, alpha: 1)
+        let container = UIView()
+        container.backgroundColor = UIColor(red: 0.969, green: 0.973, blue: 0.949, alpha: 1)
+        let preview = CameraPreviewView(layer: context.coordinator.makePreviewLayer())
+        preview.isHidden = true; preview.isUserInteractionEnabled = false
+        container.addSubview(preview)
+        web.backgroundColor = .clear
+        web.scrollView.backgroundColor = .clear
         web.isOpaque = false
+        web.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(web)
+        NSLayoutConstraint.activate([
+            web.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            web.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            web.topAnchor.constraint(equalTo: container.topAnchor),
+            web.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.navigationDelegate = context.coordinator; web.uiDelegate = context.coordinator
-        context.coordinator.attach(web)
+        context.coordinator.attach(web, preview: preview)
         web.load(URLRequest(url: URL(string: "fridge://localhost/index.html")!))
-        return web
+        return container
     }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {}
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate {
         private weak var web: WKWebView?
+        private weak var preview: CameraPreviewView?
         private let ai = LocalAI(), model = ModelStore(), camera = NativeCamera()
         private var importing: String?
         private var loading = false
@@ -45,8 +61,10 @@ struct FridgeWebView: UIViewRepresentable {
             DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = disabled }
         }
 
-        func attach(_ web: WKWebView) {
+        func makePreviewLayer() -> AVCaptureVideoPreviewLayer { camera.makePreviewLayer() }
+        func attach(_ web: WKWebView, preview: CameraPreviewView) {
             self.web = web
+            self.preview = preview
             model.onProgress = { [weak self] phase, loaded, total in self?.emit(["type": "modelProgress", "progress": ["phase": phase, "loaded": loaded, "total": total]]) }
             camera.onFrame = { [weak self] jpeg, codes in self?.emit(["type": "cameraFrame", "jpeg": jpeg, "codes": codes]) }
             NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -72,6 +90,8 @@ struct FridgeWebView: UIViewRepresentable {
                         guard active else { throw FridgeError.message("アプリを開いてからAIを起動してください。モデルは保存されています。") }
                         emit(["type": "modelProgress", "progress": ["phase": "initializing"]])
                         try await ai.load(path, cache: model.cache)
+                        emit(["type": "modelProgress", "progress": ["phase": "checkingImage"]])
+                        try await ai.checkImageInference()
                         guard active, await ai.isReady() else { try? await ai.unload(); throw FridgeError.message("AIの起動中にアプリが中断されました。開いた状態で再度お試しください。") }
                         reply(id, ["ready": true])
                     case "cancelDownload": model.cancel(); reply(id, [:])
@@ -83,8 +103,20 @@ struct FridgeWebView: UIViewRepresentable {
                         let result = try await ai.infer(prompt: prompt, image: image, maxOutputTokens: args["maxOutputTokens"] as? Int ?? 256)
                         reply(id, result)
                     case "cancelInference": ai.cancellation.cancel(); reply(id, [:])
-                    case "cameraStart": try await camera.start(); cameraActive = true; updateIdleTimer(); reply(id, [:])
-                    case "cameraStop": await camera.stop(); cameraActive = false; updateIdleTimer(); reply(id, [:])
+                    case "cameraStart":
+                        try await camera.start(); cameraActive = true; updateIdleTimer()
+                        preview?.orientPortrait(); reply(id, ["nativePreview": true])
+                    case "cameraPreviewLayout":
+                        if let x = args["x"] as? Double, let y = args["y"] as? Double,
+                           let width = args["width"] as? Double, let height = args["height"] as? Double,
+                           [x, y, width, height].allSatisfy({ $0.isFinite }), width > 0, height > 0 {
+                            preview?.frame = CGRect(x: x, y: y, width: width, height: height)
+                            preview?.layer.cornerRadius = CGFloat(args["radius"] as? Double ?? 21)
+                            preview?.isHidden = !cameraActive || !active || args["visible"] as? Bool != true
+                        } else { preview?.isHidden = true }
+                        reply(id, [:])
+                    case "cameraStop":
+                        preview?.isHidden = true; await camera.stop(); cameraActive = false; updateIdleTimer(); reply(id, [:])
                     case "importModel":
                         guard !loading, importing == nil else { throw FridgeError.message("モデルの操作が終わってからお試しください。") }
                         try await ai.unload()
@@ -119,6 +151,7 @@ struct FridgeWebView: UIViewRepresentable {
             while let next = root.presentedViewController { root = next }; return root
         }
         @objc private func background() {
+            preview?.isHidden = true
             active = false; cameraActive = false; updateIdleTimer(); ai.cancellation.cancel()
             Task { await camera.stop(); try? await ai.unload(); emit(["type": "engineUnloaded"]) }
         }
@@ -151,7 +184,29 @@ struct FridgeWebView: UIViewRepresentable {
             guard let presenter = presenter() else { completionHandler(false); return }; presenter.present(alert, animated: true)
         }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            preview?.isHidden = true
             cameraActive = false; updateIdleTimer(); ai.cancellation.cancel(); Task { await camera.stop(); try? await ai.unload() }; webView.reload()
+        }
+    }
+}
+
+final class CameraPreviewView: UIView {
+    let videoLayer: AVCaptureVideoPreviewLayer
+    init(layer: AVCaptureVideoPreviewLayer) {
+        videoLayer = layer
+        super.init(frame: .zero)
+        self.layer.addSublayer(layer); self.layer.masksToBounds = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        videoLayer.frame = bounds
+        CATransaction.commit()
+    }
+    func orientPortrait() {
+        if let connection = videoLayer.connection, connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
         }
     }
 }
