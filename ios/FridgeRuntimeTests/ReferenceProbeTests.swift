@@ -46,7 +46,7 @@ final class ReferenceProbeTests: XCTestCase {
     }
 
     private func attachLogs(_ directory: URL) {
-        for name in ["result.json", "phases.txt", "native-stderr.txt"] {
+        for name in ["result.json", "phases.txt", "native-stderr.txt", "apple-partial.txt", "red-partial.txt"] {
             if let data = try? Data(contentsOf: directory.appendingPathComponent(name)) {
                 let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.plain-text")
                 attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)

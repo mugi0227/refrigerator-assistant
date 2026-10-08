@@ -75,7 +75,8 @@ actor ReferenceProbe {
             result["appleSHA256"] = SHA256.hash(data: apple).map { String(format: "%02x", $0) }.joined()
             result["status"] = "apple-image"; try save()
             await step("リンゴ画像を認識中")
-            let appleReply = try await Self.respond(chat, prompt: "What object is in this image? Answer in one word.", image: apple)
+            let appleReply = try await Self.respond(chat, prompt: "What object is in this image? Answer in one word.", image: apple,
+                partial: output.appendingPathComponent("apple-partial.txt"))
             result["appleResponse"] = appleReply
             result["appleRecognized"] = appleReply.lowercased().contains("apple")
             journal.append("APPLE: " + appleReply); try save()
@@ -87,7 +88,8 @@ actor ReferenceProbe {
             }
             result["status"] = "red-image"; try save()
             await step("Fridgeと同じ赤いJPEG画像を認識中")
-            let redReply = try await Self.respond(chat, prompt: "Name the color of this image. Answer with one English word.", image: red)
+            let redReply = try await Self.respond(chat, prompt: "Name the color of this image. Answer with one English word.", image: red,
+                partial: output.appendingPathComponent("red-partial.txt"))
             result["redResponse"] = redReply
             result["redRecognized"] = redReply.lowercased().contains("red")
             journal.append("RED: " + redReply)
@@ -107,7 +109,7 @@ actor ReferenceProbe {
         }
     }
 
-    private static func respond(_ chat: LiteRTChat, prompt: String, image: Data) async throws -> String {
+    private static func respond(_ chat: LiteRTChat, prompt: String, image: Data, partial: URL) async throws -> String {
         // Native calls can block Swift's cooperative executor. Use an OS queue
         // for cancellation, with a cleared holder so the delayed block does not
         // retain an otherwise released engine until the deadline.
@@ -115,7 +117,17 @@ actor ReferenceProbe {
         let timeout = DispatchWorkItem { holder.cancel() }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 120, execute: timeout)
         defer { timeout.cancel(); holder.clear() }
-        return try await chat.respond(prompt, image: image)
+        // LiteRTChat.respond itself only aggregates this public stream. Save
+        // each delta to distinguish stalled prefill from slow/looping decoding.
+        FileManager.default.createFile(atPath: partial.path, contents: nil)
+        let file = try FileHandle(forWritingTo: partial)
+        defer { try? file.close() }
+        var response = ""
+        for try await delta in chat.stream(prompt, image: image) {
+            response += delta
+            try file.write(contentsOf: Data(delta.utf8))
+        }
+        return response
     }
 
     static func sha256(_ url: URL) throws -> String {

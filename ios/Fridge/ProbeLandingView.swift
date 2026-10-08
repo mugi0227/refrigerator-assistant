@@ -58,7 +58,7 @@ struct ProbeLandingView: View {
         if let latest = dirs.sorted(by: { $0.lastPathComponent > $1.lastPathComponent }).first { collectLogs(latest) }
     }
     private func collectLogs(_ directory: URL) {
-        logFiles = ["result.json", "phases.txt", "native-stderr.txt"].map { directory.appendingPathComponent($0) }
+        logFiles = ["result.json", "phases.txt", "native-stderr.txt", "apple-partial.txt", "red-partial.txt"].map { directory.appendingPathComponent($0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
     }
     private func start() {
