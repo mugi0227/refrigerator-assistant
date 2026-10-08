@@ -32,7 +32,9 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSRequiresIPhoneOS: YES
-        CFBundleDisplayName: 冷蔵庫の相棒
+        # AltServer uses this name when registering the App ID with Apple.
+        # Non-ASCII names are rejected with AppleDeveloperError 3009.
+        CFBundleDisplayName: Fridge
         UILaunchScreen: {}
         NSCameraUsageDescription: 食品と印字された期限をこの端末で読み取ります。画像はサーバーへ送信しません。
         UIFileSharingEnabled: YES
@@ -42,8 +44,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: jp.mugilab.fridge
-        MARKETING_VERSION: 0.2.0
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.2.1
+        CURRENT_PROJECT_VERSION: 2
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: '1,2'
         CODE_SIGNING_ALLOWED: NO

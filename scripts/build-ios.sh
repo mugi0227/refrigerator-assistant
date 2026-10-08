@@ -13,4 +13,5 @@ mkdir -p ios/build/ipa/Payload
 cp -R ios/build/Build/Products/Release-iphoneos/Fridge.app ios/build/ipa/Payload/
 cd ios/build/ipa
 zip -qry Fridge-unsigned.ipa Payload
+python3 ../../../scripts/validate-ios-ipa.py Fridge-unsigned.ipa
 echo "IPA: ios/build/ipa/Fridge-unsigned.ipa (AltServer/AltStore signs it on installation)"
