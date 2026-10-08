@@ -20,6 +20,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build unsigned iPhone IPA
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
+      - name: Check actual Gemma text and JPEG inference
+        run: bash scripts/test-ios-runtime.sh 2>&1 | tee runtime-test.log
+      - name: Check inventory persistence on iOS Simulator
+        run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
       - name: Save AltStore IPA
         uses: actions/upload-artifact@v4
         with:
@@ -28,8 +32,6 @@ jobs:
           compression-level: 0
           retention-days: 3
           if-no-files-found: error
-      - name: Check inventory persistence on iOS Simulator
-        run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
       - name: Save diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -37,6 +39,10 @@ jobs:
           name: Fridge-iOS-diagnostics
           path: |
             device-build.log
+            runtime-test.log
+            ios/build-runtime/Runtime.xcresult
+            ios/build-runtime/summary.json
+            ios/build-runtime/attachments
             simulator-test.log
             ios/build-simulator/UI.xcresult
             ios/build-simulator/app-info.plist

@@ -15,3 +15,5 @@ ios/build/
 ios/build-simulator/
 ios/Fridge/Resources/Web/
 ios/Fridge.xcodeproj/
+ios/build-runtime/
+ios/FridgeRuntimeTests/Fixtures/config.json

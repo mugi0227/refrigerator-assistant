@@ -63,6 +63,19 @@ targets:
         CODE_SIGNING_ALLOWED: NO
     dependencies:
       - target: Fridge
+  FridgeRuntimeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [FridgeRuntimeTests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: jp.mugilab.fridge.runtime-tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Fridge.app/Fridge
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: Fridge
 schemes:
   Fridge:
     build:
@@ -75,3 +88,10 @@ schemes:
     test:
       config: Debug
       targets: [FridgeUITests]
+  FridgeRuntime:
+    build:
+      targets:
+        Fridge: all
+    test:
+      config: Debug
+      targets: [FridgeRuntimeTests]
