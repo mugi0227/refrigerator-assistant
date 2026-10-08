@@ -75,10 +75,11 @@ export class CameraScanner {
       try{const result=await this.vision.inspect(this.canvas,this.machine.target);
         if(epoch!==this.epoch||this.paused||revision!==this.machine.revision)return;
         this.onMetric({ms:result.ms,text:result.text});this.machine.observe(parseObservation(result.text));this.failures=0;
-      }catch(error){if(epoch===this.epoch&&!this.paused){this.failures=(this.failures||0)+1;this.onStatus(this.failures>=3?'AI読み取りを一時停止しました。再開または手動登録してください':`読み直しています：${error.message}`);if(this.failures>=3)this.paused=true;}}
+      }catch(error){if(epoch===this.epoch&&!this.paused)this.visionFailure(error);}
       finally{this.visionBusy=false;if(this.running&&epoch===this.epoch)this.visionTimer=setTimeout(()=>this.visionLoop(epoch),Number(this.getState().settings.interval)||1200);}
     }else this.visionTimer=setTimeout(()=>this.visionLoop(epoch),500);
   }
+  visionFailure(error){this.failures=(this.failures||0)+1;this.onStatus(this.failures>=3?'AI読み取りを一時停止しました。再開または手動登録してください':`読み直しています：${error.message}`);if(this.failures>=3)this.paused=true;}
   setPaused(value){this.paused=value;if(value){this.vision.cancel();this.machine.revision++;}else{this.failures=0;if(this.machine.pending)this.machine.pending.deadline=Date.now()+5000;}}
   async stop(){this.running=false;this.epoch++;this.vision.cancel();clearInterval(this.timer);clearTimeout(this.barcodeTimer);clearTimeout(this.visionTimer);
     if(this.stream){this.stream.getTracks().forEach(t=>{t.onended=null;t.stop();});this.stream=null;}

@@ -6,3 +6,4 @@
 .model-progress{margin:16px 0;padding:15px;background:var(--green-soft);border-radius:12px}.model-progress-heading{font-size:13px;margin-bottom:10px}.model-progress progress{display:block;width:100%;height:12px;accent-color:var(--green)}.model-progress p{font-size:12px!important;margin-top:8px;overflow-wrap:anywhere}.model-progress .secondary{margin-top:12px;min-height:44px}
 
 .runtime-status{max-width:100%;max-height:320px;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap;line-height:1.7}.toast>span{min-width:0;overflow-wrap:anywhere;max-height:180px;overflow:auto}.toast button{flex-shrink:0}.camera-status,.scan-foot{overflow-wrap:anywhere;min-width:0}
+#additional-reading>summary{min-height:44px;cursor:pointer;font-weight:600;line-height:1.6}#additional-reading>summary:focus-visible{outline:2px solid var(--green);outline-offset:4px}

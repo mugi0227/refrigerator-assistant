@@ -23,6 +23,7 @@ final class FridgeUITests: XCTestCase {
         app.terminate(); app.launch()
         XCTAssertTrue(app.staticTexts["ios-persistence-probe"].waitForExistence(timeout: 15))
         app.buttons["設定を開く"].tap()
+        app.buttons["野菜の読み取り・献立の準備（任意）"].tap()
         let native = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "iOSネイティブ")).firstMatch
         XCTAssertTrue(native.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["モデルを保存して起動"].isEnabled)
