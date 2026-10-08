@@ -25,9 +25,9 @@ actor LocalAI {
         guard !busy else { throw FridgeError.message("AIの処理中です。終了してから操作してください。") }
         engine = nil
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        // Use the native Metal path for both generation and image encoding.
-        // CPU/XNNPACK vision has reported device-only Gemma 4 reshape failures.
-        let config = try EngineConfig(modelPath: model.path, backend: .gpu,
+        // Keep generation on the CPU path that initialized on the user's device;
+        // bypass reported CPU/XNNPACK vision failures with the Metal image encoder.
+        let config = try EngineConfig(modelPath: model.path, backend: .cpu(threadCount: 4),
             visionBackend: .gpu, maxNumTokens: 2048, cacheDir: cache.path)
         let next = Engine(engineConfig: config)
         try await next.initialize()

@@ -21,7 +21,7 @@ Safari版の在庫は自動で移りません。Safariの設定でバックア�
 
 ## モデルと端末内処理
 
-- Google LiteRT-LM Swift 0.18.0、v0.2.3では生成・画像エンコーダーをGPU（Metal）に設定、コンテキスト上限2048。
+- Google LiteRT-LM Swift 0.18.0、v0.2.3では生成をCPU・画像エンコーダーをGPU（Metal）に設定、コンテキスト上限2048。画像処理をCPU/XNNPACKから切り離す構成です。
 - iOS用Gemma 4 E2Bモデルは2,588,147,712バイト（約2.6GB）。Safari版のGPU用モデルとは別ファイルで、新しく取得します。
 - モデルはアプリのApplication Supportへ保存し、起動し直した際は再利用します。AIのメモリへの読み込みはアプリの起動時やメモリ解放後に必要です。
 - ファイル取り込みは`gemma-4-E2B-it.litertlm`用です。Google AI Edge Galleryなど別アプリ内の保存データを直接共有する機能はありません。
