@@ -190,6 +190,11 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 enum CameraBarcodeReader {
     static func detect(_ image: CIImage, region: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)) throws -> [[String: String]] {
         let request = VNDetectBarcodesRequest()
+        #if targetEnvironment(simulator)
+        // Vision's barcode models cannot compile for GPU inside the hosted VM.
+        // Keep the same decoder and inputs, but use its CPU implementation.
+        request.usesCPUOnly = true
+        #endif
         request.symbologies = [.ean13, .ean8, .upce, .qr, .dataMatrix, .code128]
         let clipped = region.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
         guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return [] }
