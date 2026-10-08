@@ -35,6 +35,30 @@ final class FridgeRuntimeTests: XCTestCase {
             print("FRIDGE_RUNTIME_IMAGE_\(side): \(reply)")
             XCTAssertTrue(reply.lowercased().contains("red"), reply)
         }
+        // Exercise readable food/expiry text and complete streamed JSON, not
+        // only a color word. This is a generated label, not a camera benchmark.
+        let label = await MainActor.run {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            return UIGraphicsImageRenderer(size: CGSize(width: 384, height: 384), format: format).image { context in
+                UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 384, height: 384))
+                let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 44), .foregroundColor: UIColor.black]
+                ("MILK" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: attributes)
+                let small: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 26), .foregroundColor: UIColor.black]
+                ("BEST BEFORE" as NSString).draw(at: CGPoint(x: 40, y: 170), withAttributes: small)
+                ("2026-10-31" as NSString).draw(at: CGPoint(x: 40, y: 220), withAttributes: attributes.merging([.font: UIFont.boldSystemFont(ofSize: 36)]) { _, new in new })
+            }.jpegData(compressionQuality: 0.85)!
+        }
+        let input = XCTAttachment(data: label, uniformTypeIdentifier: "public.jpeg")
+        input.name = "Generated milk expiry label"; input.lifetime = .keepAlways; add(input)
+        let result = try await ai.infer(prompt: "Read the food name and BEST BEFORE date printed in this image. Return only JSON with keys food and date. Use the English food name and YYYY-MM-DD date. Do not guess.", image: label, maxOutputTokens: 64)
+        let reply = try XCTUnwrap(result["text"] as? String)
+        print("FRIDGE_RUNTIME_FOOD_LABEL: \(reply)")
+        let start = try XCTUnwrap(reply.firstIndex(of: "{"))
+        let end = try XCTUnwrap(reply.lastIndex(of: "}"))
+        let data = try XCTUnwrap(String(reply[start...end]).data(using: .utf8))
+        let food = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])
+        XCTAssertEqual(food["food"]?.lowercased(), "milk", reply)
+        XCTAssertEqual(food["date"], "2026-10-31", reply)
         try await ai.unload()
     }
 }

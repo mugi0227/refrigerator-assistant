@@ -36,7 +36,8 @@ actor LocalAI {
         let runtimeCache = cache.appendingPathComponent("litert-0.15.0-metal-text-cpu-vision", isDirectory: true)
         try FileManager.default.createDirectory(at: runtimeCache, withIntermediateDirectories: true)
         // Physical-device logs confirm STABLEHLO_COMPOSITE fails with GPU vision.
-        // Match the device-verified 0.15.0 configuration (Metal text, CPU vision).
+        // Use the backends in the published 0.15.0 device report. Passing on this
+        // device still requires both text and image readiness checks below.
         // Simulator Metal has different limits and cannot validate device GPU execution.
         #if targetEnvironment(simulator)
         let textBackend: Backend = .cpu(threadCount: 4)
@@ -58,6 +59,21 @@ actor LocalAI {
     }
 
     func checkImageInference() async throws {
+        // The published device implementation warms GPU decoding on a throwaway
+        // text conversation before sending an image. Also distinguish failures
+        // in text generation from failures in the vision encoder.
+        do {
+            logger.info("Checking text generation before image inference")
+            let result = try await infer(prompt: "Reply exactly BLUE-47.", image: nil, maxOutputTokens: 16)
+            guard let text = result["text"] as? String, text.contains("BLUE-47") else {
+                throw FridgeError.message("文章AIの起動検査で正しい回答を確認できませんでした。")
+            }
+            logger.info("Text readiness check succeeded")
+        } catch {
+            logger.error("Text readiness check failed: \(error.localizedDescription, privacy: .public)")
+            try? unload()
+            throw FridgeError.message("文章AIの起動テストに失敗しました。モデルは保存されています。\n\(error.localizedDescription)")
+        }
         let jpeg = await MainActor.run {
             let format = UIGraphicsImageRendererFormat(); format.scale = 1
             return UIGraphicsImageRenderer(size: CGSize(width: 384, height: 384), format: format).image { context in
@@ -97,11 +113,17 @@ actor LocalAI {
         let watchdog = DispatchWorkItem { [cancellation] in cancellation.cancel() }
         DispatchQueue.global().asyncAfter(deadline: .now() + 90, execute: watchdog)
         defer { watchdog.cancel() }
-        var content: [Content] = []
+        var content: [Content] = [.text(prompt)]
         if let image { content.append(.imageData(image)) }
-        content.append(.text(prompt))
-        let reply = try await conversation.sendMessage(Message(contents: Contents(contents: content)),
-            maxOutputTokens: min(max(maxOutputTokens, 1), 1000))
-        return ["text": reply.toString, "ms": Date().timeIntervalSince(started) * 1000]
+        // The synchronous C API discards its error and returns null. The stream
+        // callback includes the native executor error; aggregate deltas so the
+        // existing UI and food JSON parser keep receiving a complete response.
+        var text = ""
+        for try await chunk in conversation.sendMessageStream(
+            Message(contents: Contents(contents: content)),
+            maxOutputTokens: min(max(maxOutputTokens, 1), 1000)) {
+            text += chunk.toString
+        }
+        return ["text": text, "ms": Date().timeIntervalSince(started) * 1000]
     }
 }
