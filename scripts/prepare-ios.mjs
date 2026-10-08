@@ -5,6 +5,10 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),out=resolve(roo
 mkdirSync(out,{recursive:true});
 for(const name of readdirSync(resolve(root,'public'))){if(['_headers','sw.js','manifest.webmanifest','barcode-worker.js'].includes(name))continue;copyFileSync(resolve(root,'public',name),resolve(out,name));}
 const index=resolve(out,'index.html');let html=readFileSync(index,'utf8');
+const version=readFileSync(resolve(root,'ios/project.yml'),'utf8').match(/MARKETING_VERSION:\s*([\d.]+)/)?.[1];
+if(!version)throw new Error('Missing iOS app version');
+writeFileSync(resolve(out,'native-version.js'),`globalThis.fridgeAppVersion=${JSON.stringify(version)};\n`);
+html=html.replace('</head>','<script src="./native-version.js"></script></head>');
 html=html.replace('<video id="camera" playsinline muted autoplay></video>','<img id="camera" alt="背面カメラの映像">');
 html=html.replace('<link rel="manifest" href="./manifest.webmanifest">','');
 html=html.replace('<meta charset="UTF-8">','<meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\' fridge:; script-src \'self\' fridge:; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; connect-src https://world.openfoodfacts.org; object-src \'none\'; base-uri \'self\'; form-action \'self\'">');

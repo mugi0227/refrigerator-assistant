@@ -59,7 +59,11 @@ Windows単独ではApple公式Simulatorを動かせません。WindowsではWeb�
 
 ## 実機で確認すること
 
-v0.2.3は[Mac CIの実モデル・在庫UIテスト](https://github.com/mugi0227/refrigerator-assistant/actions/runs/37773223614)に成功しました。文章生成CPU・画像GPUの構成で、起動時の合成画像テスト、BLUE-47への回答、320px/384px JPEGへのRedの回答を確認しています。生成もGPUにした構成はSimulatorのMetalリソース制約で初期化に失敗したため、採用していません。v0.2.3の実機の食品認識・速度はまだ未確認です。
+v0.2.3は[Mac CIの実モデル・在庫UIテスト](https://github.com/mugi0227/refrigerator-assistant/actions/runs/37773223614)に成功しました。文章生成CPU・画像GPUの構成で、起動時の合成画像テスト、BLUE-47への回答、320px/384px JPEGへのRedの回答を確認しています。生成もGPUにした構成はSimulatorのMetalリソース制約で初期化に失敗したため、採用していません。
+
+2026/10/08、本人のiPhoneではv0.2.3の起動時画像テストが`Failed to create conversation / Failed to modify graph with delegate`で失敗しました。画像を送る前の画像エンコーダー準備で失敗しています。モデルは保存済みです。[実機で成功した公開実装](https://github.com/john-rocky/swift-litert-lm)はLiteRT-LM **0.15.0**・生成GPU・画像CPU・画像トークン280を使用し、画像GPUではSTABLEHLO_COMPOSITEの準備に失敗すると報告しています。これは今回のエラーと整合しますが、こちらの実機の詳細ログで同じ原因かは未確認です。0.18.0のCPU画像処理も本人の実機では失敗しており、SDKの版の違いを含めた調査が必要です。実機の食品認識は未達です。
+
+Windowsで実機ログを確認するには、iPhoneをUSBで接続・ロック解除し、リポジトリ直下の`Capture-iPhone-Logs.cmd`を実行してからFridgeで「保存したモデルで起動」を押します。既存のBackburner用Python環境のpymobiledevice3を利用します。3分間、Fridgeプロセスのログだけを`local/fridge-iphone-日時.jsonl`へ記録します。Appleの信頼・ペアリングが必要です。端末情報は機種識別子・iOS版・ビルド番号に絞り、アプリの削除やモデル再取得は行いません。未接続時の終了は確認済みですが、実機からのログ取得は接続待ちです。
 
 まずモデルの保存・起動、次にカメラ許可、牛乳の認識と印字された期限の読み取りを確認します。野菜の数量、二重登録の抑制、消費と取り消し、再起動後の在庫保存も確認してください。Safariより動きやすい構成を目指していますが、端末ごとのメモリ・速度・発熱は実機で確認が必要です。
 
