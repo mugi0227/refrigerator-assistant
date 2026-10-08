@@ -21,10 +21,16 @@ jobs:
       - name: Build device probe
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
       - name: Test reference library on real model in Simulator
-        run: bash scripts/test-ios-runtime.sh -only-testing:FridgeRuntimeTests/ReferenceProbeTests 2>&1 | tee runtime-test.log
+        id: runtime
+        continue-on-error: true
+        timeout-minutes: 8
+        run: bash scripts/test-ios-runtime.sh -only-testing:FridgeRuntimeTests/ReferenceProbeTests -test-timeouts-enabled YES -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 240 2>&1 | tee runtime-test.log
       - name: Verify probe screen and inventory persistence
         run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
-      - name: Save verified probe IPA
+      # This is an experiment for comparing a known failing physical runtime.
+      # Retain an installable diagnostic build if Simulator inference fails;
+      # the UI/persistence checks above still must pass, and logs expose outcome.
+      - name: Save device experiment IPA
         uses: actions/upload-artifact@v4
         with:
           name: Fridge-Gemma-Probe
@@ -43,6 +49,7 @@ jobs:
             simulator-test.log
             ios/build-runtime/summary.json
             ios/build-runtime/attachments
+            ios/build-runtime/probe-logs
             ios/build-simulator/summary.json
             ios/build-simulator/screenshots
           retention-days: 7

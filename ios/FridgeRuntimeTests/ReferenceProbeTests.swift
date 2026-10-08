@@ -6,8 +6,9 @@ final class ReferenceProbeTests: XCTestCase {
         let configURL = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "config", withExtension: "json"))
         let config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: configURL)) as? [String: String])
         let model = URL(fileURLWithPath: try XCTUnwrap(config["modelPath"]))
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("probe-test-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
+        // Keep the direct native log even if XCTest has to kill a stuck process.
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("GemmaProbe-CI").appendingPathComponent(UUID().uuidString)
         let runner = ReferenceProbe()
         do {
             _ = try await runner.run(model: model, output: directory) { print("REFERENCE_PROGRESS: " + $0) }

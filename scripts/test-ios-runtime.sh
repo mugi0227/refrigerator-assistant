@@ -23,6 +23,11 @@ if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
 SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); phones=[(tuple(int(n) for n in r.split("iOS-")[1].split("-")),v["name"],v["udid"]) for r,ds in d["devices"].items() if "iOS-" in r for v in ds if v["name"].startswith("iPhone")]; print(max(phones)[2])')
 collect_results() {
+  DATA_CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR_ID" jp.mugilab.fridge data 2>/dev/null || true)
+  if [ -n "$DATA_CONTAINER" ] && [ -d "$DATA_CONTAINER/Documents/GemmaProbe-CI" ]; then
+    mkdir -p ios/build-runtime/probe-logs
+    cp -R "$DATA_CONTAINER/Documents/GemmaProbe-CI/." ios/build-runtime/probe-logs/
+  fi
   if [ -d ios/build-runtime/Runtime.xcresult ]; then
     xcrun xcresulttool get test-results summary --path ios/build-runtime/Runtime.xcresult > ios/build-runtime/summary.json || true
     xcrun xcresulttool export attachments --path ios/build-runtime/Runtime.xcresult --output-path ios/build-runtime/attachments || true
@@ -31,4 +36,5 @@ collect_results() {
 trap collect_results EXIT
 xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
   -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
-  -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "$@" test
+  -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+  -parallel-testing-enabled NO "$@" test

@@ -108,10 +108,13 @@ actor ReferenceProbe {
     }
 
     private static func respond(_ chat: LiteRTChat, prompt: String, image: Data) async throws -> String {
-        let timeout = Task {
-            do { try await Task.sleep(nanoseconds: 120_000_000_000); try chat.cancel() } catch { }
-        }
-        defer { timeout.cancel() }
+        // Native calls can block Swift's cooperative executor. Use an OS queue
+        // for cancellation, with a cleared holder so the delayed block does not
+        // retain an otherwise released engine until the deadline.
+        let holder = ProbeCancellation(chat)
+        let timeout = DispatchWorkItem { holder.cancel() }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 120, execute: timeout)
+        defer { timeout.cancel(); holder.clear() }
         return try await chat.respond(prompt, image: image)
     }
 
@@ -126,6 +129,18 @@ actor ReferenceProbe {
     private static func deviceIdentifier() -> String {
         var info = utsname(); uname(&info)
         return withUnsafeBytes(of: &info.machine) { String(cString: $0.baseAddress!.assumingMemoryBound(to: CChar.self)) }
+    }
+}
+
+private final class ProbeCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var chat: LiteRTChat?
+    init(_ chat: LiteRTChat) { self.chat = chat }
+    func clear() { lock.lock(); chat = nil; lock.unlock() }
+    func cancel() {
+        lock.lock(); let current = chat; lock.unlock()
+        fputs("FRIDGE_PROBE: 120 second image deadline; requesting cancellation\n", stderr); fflush(stderr)
+        try? current?.cancel()
     }
 }
 
