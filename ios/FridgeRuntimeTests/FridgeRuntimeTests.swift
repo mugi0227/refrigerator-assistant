@@ -8,6 +8,7 @@ final class FridgeRuntimeTests: XCTestCase {
         let config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: configURL)) as? [String: String])
         let modelPath = try XCTUnwrap(config["modelPath"])
         let ai = LocalAI()
+        print("FRIDGE_RUNTIME_BACKEND: \(LocalAI.runtimeLabel)")
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try await ai.load(URL(fileURLWithPath: modelPath), cache: cache)
         let ready = await ai.isReady()

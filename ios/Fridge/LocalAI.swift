@@ -1,6 +1,7 @@
 import Foundation
 import LiteRTLM
 import UIKit
+import OSLog
 
 enum FridgeError: LocalizedError {
     case message(String)
@@ -16,6 +17,12 @@ final class InferenceCancellation: @unchecked Sendable {
 }
 
 actor LocalAI {
+    private let logger = Logger(subsystem: "jp.mugilab.fridge", category: "LocalAI")
+    #if targetEnvironment(simulator)
+    static let runtimeLabel = "LiteRT-LM 0.15.0 / simulator: CPU text + CPU vision"
+    #else
+    static let runtimeLabel = "LiteRT-LM 0.15.0 / device: Metal text + CPU vision"
+    #endif
     private var engine: Engine?
     private var busy = false
     nonisolated let cancellation = InferenceCancellation()
@@ -24,14 +31,25 @@ actor LocalAI {
     func load(_ model: URL, cache: URL) async throws {
         guard !busy else { throw FridgeError.message("AIの処理中です。終了してから操作してください。") }
         engine = nil
-        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        // Keep generation on the CPU path that initialized on the user's device;
-        // bypass reported CPU/XNNPACK vision failures with the Metal image encoder.
-        let config = try EngineConfig(modelPath: model.path, backend: .cpu(threadCount: 4),
-            visionBackend: .gpu, maxNumTokens: 2048, cacheDir: cache.path)
+        // Keep compiler caches separate from the failed 0.18.0 configurations.
+        // Model weights stay at their existing persistent path.
+        let runtimeCache = cache.appendingPathComponent("litert-0.15.0-metal-text-cpu-vision", isDirectory: true)
+        try FileManager.default.createDirectory(at: runtimeCache, withIntermediateDirectories: true)
+        // Physical-device logs confirm STABLEHLO_COMPOSITE fails with GPU vision.
+        // Match the device-verified 0.15.0 configuration (Metal text, CPU vision).
+        // Simulator Metal has different limits and cannot validate device GPU execution.
+        #if targetEnvironment(simulator)
+        let textBackend: Backend = .cpu(threadCount: 4)
+        #else
+        let textBackend: Backend = .gpu
+        #endif
+        logger.info("Starting \(Self.runtimeLabel, privacy: .public)")
+        let config = try EngineConfig(modelPath: model.path, backend: textBackend,
+            visionBackend: .cpu(), maxNumTokens: 2048, cacheDir: runtimeCache.path)
         let next = Engine(engineConfig: config)
         try await next.initialize()
         engine = next
+        logger.info("Engine initialized; image readiness check still required")
     }
 
     func unload() throws {
@@ -49,11 +67,17 @@ actor LocalAI {
         // Initialization alone can succeed on a device whose vision executor fails.
         // Check a synthetic image before reporting that scanning is ready.
         do {
+            logger.info("Checking synthetic 384px JPEG image")
             let result = try await infer(prompt: "Name the color of this image. Answer with one English word.", image: jpeg, maxOutputTokens: 8)
             guard let text = result["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw FridgeError.message("画像AIから回答がありませんでした。")
             }
+            guard text.lowercased().contains("red") else {
+                throw FridgeError.message("起動検査の画像を正しく読み取れませんでした。")
+            }
+            logger.info("Image readiness check succeeded")
         } catch {
+            logger.error("Image readiness check failed: \(error.localizedDescription, privacy: .public)")
             try? unload()
             throw FridgeError.message("画像AIの起動テストに失敗しました。モデルは保存されています。\n\(error.localizedDescription)")
         }

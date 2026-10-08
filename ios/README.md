@@ -21,7 +21,7 @@ Safari版の在庫は自動で移りません。Safariの設定でバックア�
 
 ## モデルと端末内処理
 
-- Google LiteRT-LM Swift 0.18.0、v0.2.3では生成をCPU・画像エンコーダーをGPU（Metal）に設定、コンテキスト上限2048。画像処理をCPU/XNNPACKから切り離す構成です。
+- Google LiteRT-LM Swift 0.15.0、v0.2.4では実機の生成をGPU（Metal）・画像エンコーダーをCPUに設定、コンテキスト上限2048・画像トークン280。Simulatorの生成はCPUで、実機GPUの検証とは区別します。
 - iOS用Gemma 4 E2Bモデルは2,588,147,712バイト（約2.6GB）。Safari版のGPU用モデルとは別ファイルで、新しく取得します。
 - モデルはアプリのApplication Supportへ保存し、起動し直した際は再利用します。AIのメモリへの読み込みはアプリの起動時やメモリ解放後に必要です。
 - ファイル取り込みは`gemma-4-E2B-it.litertlm`用です。Google AI Edge Galleryなど別アプリ内の保存データを直接共有する機能はありません。
@@ -64,6 +64,10 @@ v0.2.3は[Mac CIの実モデル・在庫UIテスト](https://github.com/mugi0227
 2026/10/08、本人のiPhoneではv0.2.3の起動時画像テストが`Failed to create conversation / Failed to modify graph with delegate`で失敗しました。画像を送る前の画像エンコーダー準備で失敗しています。モデルは保存済みです。[実機で成功した公開実装](https://github.com/john-rocky/swift-litert-lm)はLiteRT-LM **0.15.0**・生成GPU・画像CPU・画像トークン280を使用し、画像GPUではSTABLEHLO_COMPOSITEの準備に失敗すると報告しています。これは今回のエラーと整合しますが、こちらの実機の詳細ログで同じ原因かは未確認です。0.18.0のCPU画像処理も本人の実機では失敗しており、SDKの版の違いを含めた調査が必要です。実機の食品認識は未達です。
 
 Windowsで実機ログを確認するには、iPhoneをUSBで接続・ロック解除し、リポジトリ直下の`Capture-iPhone-Logs.cmd`を実行してからFridgeで「保存したモデルで起動」を押します。既存のBackburner用Python環境のpymobiledevice3を利用します。3分間、Fridgeプロセスのログだけを`local/fridge-iphone-日時.jsonl`へ記録します。Appleの信頼・ペアリングが必要です。端末情報は機種識別子・iOS版・ビルド番号に絞り、アプリの削除やモデル再取得は行いません。未接続時の終了は確認済みですが、実機からのログ取得は接続待ちです。
+
+同日、USB接続の実機`iPhone18,1`・iOS 26.6.2からFridgeのログを取得できました。v0.2.3の起動検査で`Node number 138 (STABLEHLO_COMPOSITE) failed to prepare.`を2回確認し、GPU画像処理の失敗と確認しました。記録は`local/fridge-iphone-20261008-224443.jsonl`です。ログがPCへ届くまで時間がかかることがあるため、取得途中の0バイトだけで取得失敗と判断しないでください。
+
+v0.2.4は実機の成功例に合わせてSDK 0.15.0・生成GPU・画像CPUへ変更し、古いSDKのコンパイルキャッシュを別ディレクトリに隔離します。保存済みのモデルはそのまま使います。起動検査は合成赤色画像への回答が`red`を含むことまで確認し、失敗した場合は準備完了としません。新しい検証結果が出るまでは実機での解消を保証しません。SimulatorはSDK 0.15.0のCPU生成・CPU画像処理を検証し、実機GPUの動作はiPhoneの起動検査・食品読み取りで確認します。
 
 まずモデルの保存・起動、次にカメラ許可、牛乳の認識と印字された期限の読み取りを確認します。野菜の数量、二重登録の抑制、消費と取り消し、再起動後の在庫保存も確認してください。Safariより動きやすい構成を目指していますが、端末ごとのメモリ・速度・発熱は実機で確認が必要です。
 
