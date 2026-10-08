@@ -11,13 +11,20 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     timeout-minutes: 15
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Record build environment
+        run: |
+          uname -m
+          xcodebuild -version
+          xcrun simctl list runtimes
       - name: Build device probe
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
       - name: Test reference library on real model in Simulator
