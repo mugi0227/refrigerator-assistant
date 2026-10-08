@@ -25,9 +25,10 @@ actor LocalAI {
         guard !busy else { throw FridgeError.message("AIの処理中です。終了してから操作してください。") }
         engine = nil
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-        // Native CPU execution uses disk-backed weights; no browser/WASM model copy.
-        let config = try EngineConfig(modelPath: model.path, backend: .cpu(threadCount: 4),
-            visionBackend: .cpu(threadCount: 2), maxNumTokens: 2048, cacheDir: cache.path)
+        // Use the native Metal path for both generation and image encoding.
+        // CPU/XNNPACK vision has reported device-only Gemma 4 reshape failures.
+        let config = try EngineConfig(modelPath: model.path, backend: .gpu,
+            visionBackend: .gpu, maxNumTokens: 2048, cacheDir: cache.path)
         let next = Engine(engineConfig: config)
         try await next.initialize()
         engine = next
