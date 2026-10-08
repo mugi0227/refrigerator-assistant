@@ -81,6 +81,8 @@ SwiftUIで画面本体をセーフエリア内へ配置し、背景色だけを�
 
 配布ファイルは`local/ios-v0.2.5/Fridge-0.2.5-AltStore.ipa`（約13.4MB）。ARM64・ASCII名・同一Bundle ID・ZIP CRC・版・実機用GPU生成/CPU画像の文字列・ストリームAPIと文章検査が含まれることを確認しました。証跡: 同ディレクトリの`verification.json`。アプリを削除せずAltStoreで更新し、「保存したモデルで起動」で確認します。実機での解消は未確認です。失敗した場合は文章検査か画像検査かと内部エラーが表示されるため、その画面から次の調査へ進めます。
 
+同日00:10の実機スクリーンショットでv0.2.5も画像検査に失敗したことを確認しました。ストリームAPIは`vision_litert_compiled_model_executor.cc:588 / Failed to invoke the compiled model`を返しています。画像検査まで進んでいるため、先行するBLUE-47の文章検査は通過しています。画像処理の不具合は未解消で、OS更新が解消策だとは未確認です。公開成功例はiPhone 17 Pro・iOS 27ですが、iOS 26から27へ更新した比較検証ではありません。証跡: `local/physical-ios-v0.2.5-diagnosis.json`。追加Macビルドは実施していません。
+
 まずモデルの保存・起動、次にカメラ許可、牛乳の認識と印字された期限の読み取りを確認します。野菜の数量、二重登録の抑制、消費と取り消し、再起動後の在庫保存も確認してください。Safariより動きやすい構成を目指していますが、端末ごとのメモリ・速度・発熱は実機で確認が必要です。
 
 公式資料：[LiteRT-LM Swift](https://developers.google.com/edge/litert-lm/swift)、[AltServer](https://faq.altstore.io/altstore-classic/altserver)、[AltStore Classic](https://faq.altstore.io/altstore-classic/your-altstore)。
