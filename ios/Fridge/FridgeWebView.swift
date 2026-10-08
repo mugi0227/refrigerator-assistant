@@ -67,6 +67,7 @@ struct FridgeWebView: UIViewRepresentable {
             self.preview = preview
             model.onProgress = { [weak self] phase, loaded, total in self?.emit(["type": "modelProgress", "progress": ["phase": phase, "loaded": loaded, "total": total]]) }
             camera.onFrame = { [weak self] jpeg, codes in self?.emit(["type": "cameraFrame", "jpeg": jpeg, "codes": codes]) }
+            camera.onCodes = { [weak self] codes in self?.emit(["type": "barcodeFrame", "codes": codes]) }
             NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(foreground), name: UIApplication.willEnterForegroundNotification, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(memoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
@@ -113,8 +114,20 @@ struct FridgeWebView: UIViewRepresentable {
                             preview?.frame = CGRect(x: x, y: y, width: width, height: height)
                             preview?.layer.cornerRadius = CGFloat(args["radius"] as? Double ?? 21)
                             preview?.isHidden = !cameraActive || !active || args["visible"] as? Bool != true
+                            if let preview, !preview.isHidden {
+                                preview.layoutIfNeeded()
+                                camera.updateVisibleRegion(preview.videoLayer.metadataOutputRectConverted(fromLayerRect: preview.bounds))
+                            }
                         } else { preview?.isHidden = true }
                         reply(id, [:])
+                    case "cameraFocus":
+                        guard active, cameraActive, let preview, !preview.isHidden,
+                              let x = args["x"] as? Double, let y = args["y"] as? Double,
+                              x.isFinite, y.isFinite, (0...1).contains(x), (0...1).contains(y) else {
+                            throw FridgeError.message("カメラを開始してからピントを合わせてください。")
+                        }
+                        let point = preview.videoLayer.captureDevicePointConverted(fromLayerPoint: CGPoint(x: x * preview.bounds.width, y: y * preview.bounds.height))
+                        try await camera.focus(at: point); reply(id, [:])
                     case "cameraStop":
                         preview?.isHidden = true; await camera.stop(); cameraActive = false; updateIdleTimer(); reply(id, [:])
                     case "importModel":
