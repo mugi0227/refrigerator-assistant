@@ -2,6 +2,7 @@ import XCTest
 
 final class FridgeUITests: XCTestCase {
     func testComparisonLaunchAndMissingModelMessage() {
+        continueAfterFailure = false
         let app = XCUIApplication(); app.launch()
         let start = app.buttons["startReferenceProbe"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
@@ -10,7 +11,14 @@ final class FridgeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["probeStatus"].label.contains("保存済みモデルが見つかりません"))
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Reference probe launch"; screenshot.lifetime = .keepAlways; add(screenshot)
-        app.buttons["通常の冷蔵庫画面を開く"].tap()
+        let openInventory = app.buttons["通常の冷蔵庫画面を開く"]
+        // SwiftUI Form lazily creates offscreen rows on smaller iPhones.
+        for _ in 0..<4 {
+            if openInventory.exists && openInventory.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(openInventory.exists && openInventory.isHittable)
+        openInventory.tap()
         XCTAssertTrue(app.buttons["＋ 手入力"].waitForExistence(timeout: 15))
     }
     func testNativeSettingsAndInventorySurviveRelaunch() {
