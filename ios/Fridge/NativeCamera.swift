@@ -189,16 +189,23 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 
 enum CameraBarcodeReader {
     static func detect(_ image: CIImage, region: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)) throws -> [[String: String]] {
-        let request = VNDetectBarcodesRequest()
-        #if targetEnvironment(simulator)
-        // Vision's barcode models cannot compile for GPU inside the hosted VM.
-        // Keep the same decoder and inputs, but use its CPU implementation.
-        request.usesCPUOnly = true
-        #endif
-        request.symbologies = [.ean13, .ean8, .upce, .qr, .dataMatrix, .code128]
         let clipped = region.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
         guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return [] }
-        request.regionOfInterest = clipped
+        #if !targetEnvironment(simulator)
+        // Keep current Vision detection on real devices. A legacy CPU decoder
+        // also works without the newer system detection model if it cannot load.
+        if let codes = try? decode(image, region: clipped, revision: VNDetectBarcodesRequest.defaultRevision), !codes.isEmpty { return codes }
+        #endif
+        // Hosted Simulator runtimes cannot load the current detection model.
+        // Test the same compatibility decoder that is a real-device fallback.
+        return try decode(image, region: clipped, revision: VNDetectBarcodesRequestRevision1)
+    }
+    private static func decode(_ image: CIImage, region: CGRect, revision: Int) throws -> [[String: String]] {
+        let request = VNDetectBarcodesRequest()
+        request.revision = revision
+        if revision == VNDetectBarcodesRequestRevision1 { request.usesCPUOnly = true }
+        request.symbologies = [.ean13, .ean8, .upce, .qr, .dataMatrix, .code128]
+        request.regionOfInterest = region
         try VNImageRequestHandler(ciImage: image, orientation: .up).perform([request])
         return (request.results ?? []).compactMap { code in
             guard let value = code.payloadStringValue else { return nil }
