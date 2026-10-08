@@ -1,0 +1,7 @@
+{
+  "source": "https://raw.githubusercontent.com/google-ai-edge/LiteRT-LM/ea1196385268fbb693111e173c7fe465a163d8eb/support/preprocessor/testdata/apple.png",
+  "sha256": "2ad6b3536f9973baf28594b7ce3f96f641ce962cdf31399558a6d432c8f8c25f",
+  "bytes": 381806,
+  "license": "Apache-2.0",
+  "note": "Reference fetch-test-assets.sh uses old runtime/components/preprocessor/testdata/apple.png path. Current upstream path is support/preprocessor/testdata/apple.png."
+}

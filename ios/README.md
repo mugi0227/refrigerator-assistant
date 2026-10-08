@@ -109,3 +109,14 @@ SwiftUIで画面本体をセーフエリア内へ配置し、背景色だけを�
 まずモデルの保存・起動、次にカメラ許可、牛乳の認識と印字された期限の読み取りを確認します。野菜の数量、二重登録の抑制、消費と取り消し、再起動後の在庫保存も確認してください。Safariより動きやすい構成を目指していますが、端末ごとのメモリ・速度・発熱は実機で確認が必要です。
 
 公式資料：[LiteRT-LM Swift](https://developers.google.com/edge/litert-lm/swift)、[AltServer](https://faq.altstore.io/altstore-classic/altserver)、[AltStore Classic](https://faq.altstore.io/altstore-classic/your-altstore)。
+## v0.2.7 公開成功例の実機比較
+
+この版は起動すると「Gemma比較」を表示します。AltStoreで既存のFridgeを削除せず更新し、「比較テストを開始」を押してください。既存のApplication Supportのモデルを読み、SHA256を配布元と照合します。モデルや在庫の削除・再取得は行いません。
+
+カメラとWKWebViewを作らず、`john-rocky/swift-litert-lm` の `1c12d404153b8e261d48da584f6f80465e294ac2` に固定した `LiteRTChat` を直接呼びます。公開G0画像テストに合わせてGPU生成・CPU画像・画像枠16・画像トークン280・2048トークン・既定サンプラー・benchmark有効・事前生成有効・投機的生成無効です。保存場所を維持するため、モデル取得を伴うカタログ初期化の代わりに同ライブラリのローカルファイル初期化を使います。thinkingは公開実装の既定値です。Galleryの設定をコピーした版ではありません。
+
+成功例が指定するGoogleのリンゴ画像と、Fridge起動検査の384px赤色JPEGを順に送信します。上流の画像は現在 `support/preprocessor/testdata/apple.png` にあり、取得コミット・SHA256・Apache-2.0ライセンスを `Fridge/Resources/Probe` に記録しています。実行結果、段階、メモリ使用量、端末・OS、モデルSHA256とC/C++のstderrをDocuments/GemmaProbeへ保存し、「結果と内部ログを共有」で書き出せます。クラッシュ時もそれまでの記録はファイルアプリから取り出せます。初期化途中にはキャンセルAPIが公開されていません。初期化後の各画像生成には120秒後のキャンセル要求を設定していますが、ネイティブ処理が応答しない場合の終了を保証するものではありません。
+
+同じBundle IDで保存領域を維持します。「通常の冷蔵庫画面を開く」も用意しています。比較が終わるまでこのボタンは無効で、2つのモデルを同時に起動しません。通常画面へ移ったあと比較画面に戻るには、アプリを終了して再起動します。
+
+専用CIはiPhone用ビルド、実モデルの公開ライブラリ画像認識・モデル不一致の拒否・失敗ログ保持、比較画面と在庫永続化を確認します。Simulatorでは生成のみCPUへ変更するため、CI成功を実機Metalの成功とは扱いません。カメラ変更の検証は既存のiOSワークフローで別途行います。実機での比較結果は未確認です。

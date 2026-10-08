@@ -1,0 +1,48 @@
+name: Gemma reference probe
+on:
+  push:
+    branches: [codex/gemma-reference-probe]
+    paths: ['ios/**', 'scripts/**', '.github/workflows/gemma-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gemma-probe-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build device probe
+        run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
+      - name: Test reference library on real model in Simulator
+        run: bash scripts/test-ios-runtime.sh -only-testing:FridgeRuntimeTests/ReferenceProbeTests 2>&1 | tee runtime-test.log
+      - name: Verify probe screen and inventory persistence
+        run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
+      - name: Save verified probe IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fridge-Gemma-Probe
+          path: ios/build/ipa/Fridge-unsigned.ipa
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - name: Save diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gemma-Probe-diagnostics
+          path: |
+            device-build.log
+            runtime-test.log
+            simulator-test.log
+            ios/build-runtime/summary.json
+            ios/build-runtime/attachments
+            ios/build-simulator/summary.json
+            ios/build-simulator/screenshots
+          retention-days: 7

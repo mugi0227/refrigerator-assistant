@@ -31,4 +31,4 @@ collect_results() {
 trap collect_results EXIT
 xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
   -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
-  -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test
+  -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "$@" test

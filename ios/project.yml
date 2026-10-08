@@ -5,8 +5,8 @@ options:
     iOS: '17.0'
 packages:
   LiteRTLM:
-    url: https://github.com/google-ai-edge/LiteRT-LM
-    exactVersion: 0.15.0
+    url: https://github.com/john-rocky/swift-litert-lm
+    revision: 1c12d404153b8e261d48da584f6f80465e294ac2
 settings:
   base:
     SWIFT_VERSION: '5.0'
@@ -19,6 +19,9 @@ targets:
       - path: Fridge
         excludes: [Resources, Info.plist]
       - path: Fridge/Resources/Web
+        type: folder
+        buildPhase: resources
+      - path: Fridge/Resources/Probe
         type: folder
         buildPhase: resources
     info:
@@ -44,14 +47,16 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: jp.mugilab.fridge
-        MARKETING_VERSION: 0.2.6
-        CURRENT_PROJECT_VERSION: 7
+        MARKETING_VERSION: 0.2.7
+        CURRENT_PROJECT_VERSION: 8
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: '1,2'
         CODE_SIGNING_ALLOWED: NO
     dependencies:
       - package: LiteRTLM
         product: LiteRTLM
+      - package: LiteRTLM
+        product: LiteRTFoundation
   FridgeUITests:
     type: bundle.ui-testing
     platform: iOS
