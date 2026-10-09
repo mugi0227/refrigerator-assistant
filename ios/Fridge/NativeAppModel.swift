@@ -150,7 +150,13 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func acceptPrinted(_ lines: [[String:Any]], stamp: Double) {
         guard stamp > lastStamp, !paused else { return }; lastStamp = stamp
         marks.removeAll { $0.isDate }; marks.append(contentsOf:ScanMark.dates(lines))
-        guard let date = NativeReading.printed(lines) else { dateVote = nil; detectedDate = nil; return }
+        guard let date = NativeReading.printed(lines) else {
+            dateVote = nil; detectedDate = nil
+            if candidate?.expiryDate == nil, marks.contains(where: { $0.isDate }) {
+                scanMessage = "印字を検出しました。年・月・日を一緒に映すか、候補の期限をタップして入力してください。"
+            }
+            return
+        }
         detectedDate = date.date
         guard var food = candidate, food.barcode != nil || food.kind == "packaged" else {
             scanMessage = "日付 \(date.date) を検出。先に商品のバーコードを映してください。"; dateVote = nil; return
@@ -167,8 +173,11 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         resetScan(); scanMessage = "いまの画像を読み取り中…"
         let token = generation; aiBusy = true; defer { aiBusy = false }
         do {
-            let image = try photo ?? camera?.image()
-            guard let image else { throw FridgeError.message("カメラを開始するか写真を選んでください。") }
+            let image: Data
+            if let photo { image = photo }
+            else if let camera { image = try await camera.captureImage() }
+            else { throw FridgeError.message("カメラを開始するか写真を選んでください。") }
+            guard token == generation, !paused else { return }
             let started = Date(); let response = try await ai.run(NativeReading.prompt,image:image)
             guard token == generation, !paused else { return }
             lastAnswer = response; lastSeconds = Date().timeIntervalSince(started)

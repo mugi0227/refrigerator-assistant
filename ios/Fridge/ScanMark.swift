@@ -21,7 +21,7 @@ struct ScanMark: Identifiable {
         lines.compactMap { row in
             guard let text = row["text"] as? String, (row["confidence"] as? Double ?? 0) >= 0.55,
                   text.range(of:"製造|加工|包装",options:.regularExpression) == nil,
-                  FoodRules.dateFromLabel(text) != nil || text.range(of:"賞味|消費|best\\s*before|use\\s*by",options:[.regularExpression,.caseInsensitive]) != nil,
+                  FoodRules.dateFromLabel(text) != nil || text.precomposedStringWithCompatibilityMapping.range(of:"賞味|消費|best\\s*before|use\\s*by|[0-9]{2,4}\\s*[年./-]\\s*[0-9]{1,2}",options:[.regularExpression,.caseInsensitive]) != nil,
                   let x = row["metadataX"] as? Double, let y = row["metadataY"] as? Double,
                   let w = row["metadataWidth"] as? Double, let h = row["metadataHeight"] as? Double else { return nil }
             return ScanMark(id:"date-\(text)-\(x)",rect:CGRect(x:x,y:y,width:w,height:h),title:text,isDate:true,seenAt:Date())

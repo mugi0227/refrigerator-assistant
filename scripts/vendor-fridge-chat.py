@@ -6,8 +6,10 @@ Run with a path to the upstream Sources/LiteRTFoundation/LiteRTChat.swift.
 """
 from pathlib import Path
 import sys
+import hashlib
 
 source = Path(sys.argv[1]).read_text(encoding='utf-8')
+assert hashlib.sha256(source.encode()).hexdigest() == '74b203edd85f3cd5603e2f3dfa6cda850995cdfc53944740b9dca543b69de568', 'Expected pinned upstream LiteRTChat.swift, with normalized newlines'
 start = source.index('  public convenience init(\n    modelFileURL')
 end = source.index('\n  /// Bring up a chat session from **any Hugging', start)
 initializer = source[start:end].replace('public convenience init', 'init')

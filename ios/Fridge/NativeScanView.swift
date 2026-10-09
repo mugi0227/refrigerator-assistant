@@ -43,7 +43,7 @@ struct NativeScanView: View {
                         Text(model.scanMessage).textSelection(.enabled)
                         Text(String(format:"直前のAI処理 %.2f秒",model.lastSeconds))
                         Text(model.lastAnswer).font(.callout).textSelection(.enabled)
-                        Text("緑の枠はバーコード、黄色の枠は期限に関係する文字です。映像をタップするとピントが合います。候補は確認して保存するまで在庫に入りません。")
+                        Text("緑の枠はバーコード、黄色の枠は期限に関係する文字です。AIで読む食品は中央の白い点線の内側に映してください。映像をタップするとピントが合います。候補は確認して保存するまで在庫に入りません。")
                     }.padding()
                 }.navigationTitle("読み取りの詳細").toolbar { ToolbarItem(placement:.confirmationAction) { Button("閉じる") { details = false } } }
             }
@@ -168,6 +168,7 @@ struct NativeCameraPreview: UIViewRepresentable {
 final class NativePreviewSurface: UIView {
     private let camera: NativeCamera, video: AVCaptureVideoPreviewLayer
     private let overlay = CALayer()
+    private var expiryTimer: Timer?
     var marks: [ScanMark] = []
     init(camera: NativeCamera) {
         self.camera = camera; video = camera.makePreviewLayer(); super.init(frame:.zero)
@@ -176,6 +177,13 @@ final class NativePreviewSurface: UIView {
         isAccessibilityElement = true; accessibilityLabel = "カメラ映像。タップしてピントを合わせます。"
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+    override func didMoveToWindow() {
+        super.didMoveToWindow(); expiryTimer?.invalidate(); expiryTimer = nil
+        if window != nil {
+            expiryTimer = Timer.scheduledTimer(withTimeInterval:0.25,repeats:true) { [weak self] _ in self?.setNeedsLayout() }
+        }
+    }
+    deinit { expiryTimer?.invalidate() }
     override func layoutSubviews() {
         super.layoutSubviews(); CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -183,6 +191,13 @@ final class NativePreviewSurface: UIView {
         if let connection = video.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
         if bounds.width > 0, bounds.height > 0 { camera.updateVisibleRegion(video.metadataOutputRectConverted(fromLayerRect:bounds)) }
         overlay.sublayers?.forEach { $0.removeFromSuperlayer() }
+        let guideRect = camera.aiGuide()
+        if guideRect.width > 0 {
+            let guide = CAShapeLayer()
+            guide.path = UIBezierPath(roundedRect:video.layerRectConverted(fromMetadataOutputRect:guideRect),cornerRadius:20).cgPath
+            guide.strokeColor = UIColor.white.withAlphaComponent(0.65).cgColor; guide.fillColor = UIColor.clear.cgColor
+            guide.lineWidth = 1.5; guide.lineDashPattern = [9,7]; overlay.addSublayer(guide)
+        }
         for mark in marks where Date().timeIntervalSince(mark.seenAt) < 1.5 {
             let rect = video.layerRectConverted(fromMetadataOutputRect:mark.rect)
             guard rect.intersects(bounds) else { continue }

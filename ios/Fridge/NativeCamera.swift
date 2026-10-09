@@ -14,9 +14,11 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private let logger = Logger(subsystem: "jp.mugilab.fridge", category: "Camera")
     private let lock = NSLock()
     private var latest: Data?
+    private var latestImageAt: TimeInterval = 0
     private var latestPixels: CVPixelBuffer?
     private var latestCapturedAt: TimeInterval = 0
     private var latestTextRegion = CGRect.zero
+    private var latestAIGuide = CGRect.zero
     private var textInFlight = false
     private var device: AVCaptureDevice?
     private var videoOutput: AVCaptureVideoDataOutput?
@@ -155,6 +157,21 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     }
     deinit { NotificationCenter.default.removeObserver(self) }
     func image() throws -> Data { lock.lock(); defer { lock.unlock() }; guard let latest, Date().timeIntervalSince1970 - latestCapturedAt < 1.5 else { throw FridgeError.message("最新のカメラ映像を待っています。食品を枠に映してください。") }; return latest }
+    private func image(after stamp: TimeInterval) -> Data? {
+        lock.lock(); defer { lock.unlock() }; return latestImageAt > stamp ? latest:nil
+    }
+    func captureImage() async throws -> Data {
+        // A shutter press must use a completed frame captured AFTER the press,
+        // not the previous 0.5-second cached JPEG or an old inference result.
+        let pressedAt = Date().timeIntervalSince1970
+        for _ in 0..<20 {
+            try Task.checkCancellation()
+            if let data = image(after:pressedAt) { return data }
+            try await Task.sleep(nanoseconds:100_000_000)
+        }
+        throw FridgeError.message("最新の映像を取得できませんでした。カメラを再開してください。")
+    }
+    func aiGuide() -> CGRect { lock.lock(); defer { lock.unlock() }; return latestAIGuide }
 
     private func textSnapshot() throws -> (CVPixelBuffer, CGRect, TimeInterval) {
         lock.lock(); defer { lock.unlock() }
@@ -217,6 +234,12 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         latestTextRegion = regionConfigured ? barcodeRegion : .zero; lock.unlock()
         autoreleasepool {
             let image = CIImage(cvPixelBuffer: pixels)
+            let b = image.extent, side = min(b.width,b.height)*0.8
+            if let video = videoOutput, b.width > 0, b.height > 0 {
+                let r = CGRect(x:(b.width-side)/2/b.width,y:(b.height-side)/2/b.height,width:side/b.width,height:side/b.height)
+                let guide = video.metadataOutputRectConverted(fromOutputRect:r)
+                lock.lock(); latestAIGuide = guide; lock.unlock()
+            }
             // Decode the high-resolution visible image, independently of Gemma
             // and the small AI crop. Native metadata is the fast primary path.
             if regionConfigured, now - lastMetadata >= 1, now - lastFallback >= 1 {
@@ -236,7 +259,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                 }
             }
             guard let input = CameraImageProcessor.aiJPEG(image, context: context) else { return }
-            lock.lock(); latest = input; lock.unlock()
+            lock.lock(); latest = input; latestImageAt = now; lock.unlock()
             if let onFrame, let thumbnail = CameraImageProcessor.thumbnailJPEG(image, context:context) {
                 onFrame(thumbnail.base64EncodedString(), [])
             }

@@ -46,6 +46,16 @@ final class FridgeRuntimeTests: XCTestCase {
         print("NATIVE_PUBLIC_FOOD: \(response)")
         let food = try NativeReading.observation(response,location:"fridge")
         XCTAssertEqual(food?.name,"りんご"); XCTAssertNil(food?.expiryDate)
+        // Exercise the same native error class the device hit, then prove the
+        // next request works without rebuilding the model or retaining history.
+        do {
+            _ = try await ai.run(String(repeating:"apple ",count:3000))
+            XCTFail("Oversized prompt should exceed the 2048-token context")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.lowercased().contains("prefill"),error.localizedDescription)
+        }
+        let recovered = try await ai.run("Reply exactly BLUE-47, with no other words.")
+        XCTAssertTrue(recovered.contains("BLUE-47"),recovered)
         try await ai.unload()
         attachNativeLogs()
     }

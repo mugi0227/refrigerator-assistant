@@ -32,6 +32,8 @@ actor NativeAI {
         if let chat {
             try await chat.resetConversation(); turns = 0
             note("conversation renewed; existing engine retained")
+            let answer = try await stream(chat,"Reply exactly READY.",image:nil)
+            guard answer.contains("READY") else { throw FridgeError.message("会話の再開を確認できませんでした。ログを確認してください。") }
             progress("準備完了"); return
         }
         cancellation.set(nil); chat = nil; turns = 0; capture?.restore(); capture = nil; try? journal?.close()
