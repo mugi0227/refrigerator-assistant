@@ -189,7 +189,7 @@ struct NativeScanView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment:.leading,spacing:18) {
-                    HStack { Text("見せるだけで、記録。").font(.title2.bold()); Spacer(); Button("手入力") { model.registrationForReview(); var food = Food(); food.location = model.location; editing = food } }
+                    HStack { Text("見せるだけで、記録。").font(.title2.bold()); Spacer(); Button("手入力") { model.nextFood(); model.registrationForReview(); var food = Food(); food.location = model.location; editing = food } }
                     Picker("操作",selection:$model.scanMode) { Text("登録").tag("add"); Text("消費").tag("consume") }.pickerStyle(.segmented).onChange(of:model.scanMode) { _, _ in model.nextFood() }
                     Picker("保存場所",selection:$model.location) { Text("冷蔵").tag("fridge"); Text("冷凍").tag("freezer"); Text("常温").tag("pantry") }.onChange(of:model.location) { _, _ in model.nextFood() }
                     if model.demo { Label("操作デモ：在庫には保存しません",systemImage:"info.circle").foregroundStyle(.orange) }
@@ -231,6 +231,7 @@ struct NativeScanView: View {
                     }
                 }.padding(20)
             }.background(fridgeBackground).navigationTitle("スキャン").navigationBarTitleDisplayMode(.inline)
+                .onAppear { if model.camera == nil { model.location = store.state.settings.location } }
                 .sheet(item:$editing,onDismiss:{model.paused = false}) { food in FoodEditor(food:food) { next in
                     if model.demo { model.commit(next,store:store) }
                     else if model.scanMode == "consume" { try store.consume(candidate:next); model.cancelCandidate(); model.scanMessage = "消費しました。" }

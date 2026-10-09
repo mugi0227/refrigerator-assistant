@@ -68,13 +68,13 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func registrationForReview() { registration?.cancel(); pending = nil; countdown = 0; paused = true; generation = UUID(); dateVote = nil; foodVote = nil; productLookup?.cancel() }
     func nextFood() { resetScan(); scanMessage = "次の食品を映してください。" }
     func startCamera(store: HouseholdStore) async {
-        guard !cameraRunning, !loading else { return }
-        resetScan(); demo = false; paused = false; location = store.state.settings.location
+        guard camera == nil, !loading else { return }
+        resetScan(); demo = false; paused = false
         let value = NativeCamera(); camera = value; let token = generation
-        value.onCodes = { [weak self, weak store] codes in Task { @MainActor in guard let self, let store else { return }; self.codes(codes,store:store) } }
+        value.onCodes = { [weak self, weak store, weak value] codes in Task { @MainActor in guard let self, let store, let value, self.camera === value else { return }; self.codes(codes,store:store) } }
         do {
             try await value.start()
-            guard token == generation else { await value.stop(); return }
+            guard token == generation else { if camera === value { camera = nil }; await value.stop(); return }
             cameraRunning = true; UIApplication.shared.isIdleTimerDisabled = true
             value.updateVisibleRegion(CGRect(x:0,y:0,width:1,height:1))
             scanMessage = "バーコードを映してください。野菜はAIで読み取れます。"
@@ -88,7 +88,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
                     try? await Task.sleep(nanoseconds:UInt64(store.state.settings.interval)*1_000_000)
                 }
             }
-        } catch { camera = nil; scanMessage = error.localizedDescription }
+        } catch { if camera === value { camera = nil; scanMessage = error.localizedDescription } }
     }
     func stopCamera() async {
         loop?.cancel(); loop = nil; resetScan(); demo = false; paused = false; cameraRunning = false

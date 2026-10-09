@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "8cc6db6e-2e07-40db-ba00-3f4270a8fc85",
+      "name": "legacy-milk",
+      "quantity": 2,
+      "unit": "ml",
+      "location": "fridge",
+      "kind": "packaged",
+      "barcode": "04901330578909",
+      "expiryType": "best_before",
+      "expiryDate": "2026-12-31",
+      "freshness": 1,
+      "addedOn": "2026-10-09",
+      "opened": true,
+      "notes": "legacy backup",
+      "source": "manual",
+      "rev": 1
+    },
+    {
+      "id": "fe6e5cd2-fef6-4470-8964-fcca61f06436",
+      "name": "legacy-apple",
+      "quantity": 0,
+      "unit": "個",
+      "location": "fridge",
+      "kind": "produce",
+      "barcode": null,
+      "expiryType": "estimate",
+      "expiryDate": "2026-10-20",
+      "freshness": 1,
+      "addedOn": "2026-10-09",
+      "opened": false,
+      "notes": "",
+      "source": "manual",
+      "rev": 1
+    }
+  ],
+  "events": [],
+  "staples": [
+    {
+      "id": "51305ca1-28d6-4b9e-8703-fd8de710f1df",
+      "name": "legacy-milk",
+      "unit": "ml",
+      "minimum": 50,
+      "target": 200
+    }
+  ],
+  "shopping": [
+    {
+      "id": "legacy-shopping",
+      "name": "legacy-bread",
+      "done": true
+    }
+  ],
+  "settings": {
+    "sound": true,
+    "interval": 1200,
+    "confirmMs": 5000,
+    "location": "freezer",
+    "externalLookup": true
+  },
+  "productCache": {}
+}

@@ -2,6 +2,23 @@ import XCTest
 import UIKit
 @testable import Fridge
 final class FridgeRuntimeTests: XCTestCase {
+    @MainActor func testRecipesThroughNativeController() async throws {
+        executionTimeAllowance = 240
+        let configURL = try XCTUnwrap(Bundle(for:Self.self).url(forResource:"config",withExtension:"json"))
+        let config = try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:configURL)) as? [String:String])
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:path) }
+        let store = HouseholdStore(file:path), model = NativeAppModel()
+        for name in ["トマト","卵","玉ねぎ"] { var food = Food(); food.name = name; food.quantity = 3; try store.put(food) }
+        try await model.ai.load(URL(fileURLWithPath:try XCTUnwrap(config["modelPath"]))) { print("RECIPE_STARTUP: \($0)") }
+        model.aiReady = true
+        await model.makeRecipes(store:store)
+        XCTAssertNil(model.alert,model.alert ?? "")
+        XCTAssertEqual(model.recipes.count,3)
+        XCTAssertTrue(model.recipes.allSatisfy { !$0.name.isEmpty && !$0.steps.isEmpty })
+        print("NATIVE_RECIPES: \(model.recipes.map(\.name))")
+        try await model.ai.unload()
+    }
     func testPublicAPIStartupAndConsecutiveImages() async throws {
         executionTimeAllowance = 240
         let configURL = try XCTUnwrap(Bundle(for:Self.self).url(forResource:"config",withExtension:"json"))

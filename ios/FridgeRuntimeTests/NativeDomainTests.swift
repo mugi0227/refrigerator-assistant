@@ -1,6 +1,18 @@
 import XCTest
 @testable import Fridge
 final class NativeDomainTests: XCTestCase {
+    func testActualWebExportFixture() throws {
+        let url = try XCTUnwrap(Bundle(for:Self.self).url(forResource:"legacy-backup",withExtension:"json"))
+        let home = try Household.importBackup(Data(contentsOf:url))
+        XCTAssertEqual(home.items.count,2)
+        XCTAssertEqual(home.items.first?.barcode,"04901330578909")
+        XCTAssertEqual(home.items.first?.opened,true)
+        XCTAssertEqual(home.items.last?.quantity,0)
+        XCTAssertEqual(home.staples.first?.target,200)
+        XCTAssertEqual(home.shopping.first?.done,true)
+        XCTAssertEqual(home.settings.location,"freezer")
+        XCTAssertFalse(home.settings.externalLookup)
+    }
     func testDatesAndGS1Barcode() {
         XCTAssertFalse(FoodRules.validDate("2026-02-30")); XCTAssertTrue(FoodRules.validDate("2028-02-29"))
         XCTAssertEqual(FoodRules.dateFromLabel("賞味期限 ２０２６．１０．３１"),"2026-10-31")
@@ -42,8 +54,21 @@ final class NativeDomainTests: XCTestCase {
     func testVisionUncertaintyAndMissingCount() throws {
         XCTAssertNil(try NativeReading.observation("{\"kind\":\"none\"}",location:"fridge"))
         XCTAssertThrowsError(try NativeReading.observation("{\"kind\":\"produce\",\"name\":\"apple\",\"multiple\":true}",location:"fridge"))
+        XCTAssertThrowsError(try NativeReading.observation("{\"kind\":\"produce\",\"name\":\"apple and banana\",\"mixed_food_types\":true}",location:"fridge"))
         let food = try NativeReading.observation("{\"kind\":\"produce\",\"name\":\"apple\",\"count\":null}",location:"fridge")
         XCTAssertEqual(food?.name,"りんご"); XCTAssertEqual(food?.quantity,0); XCTAssertNil(food?.expiryDate)
+    }
+    @MainActor func testCountdownCannotCommitAfterTargetChangeOrReview() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:path) }
+        let store = HouseholdStore(file:path), model = NativeAppModel()
+        var food = Food(); food.name = "トマト"
+        model.stage(food,store:store)
+        model.registrationForReview()
+        try await Task.sleep(nanoseconds:5_100_000_000)
+        XCTAssertTrue(store.active.isEmpty)
+        model.paused = false; model.stage(food,store:store); model.nextFood()
+        XCTAssertNil(model.pending); XCTAssertEqual(model.countdown,0)
     }
     @MainActor func testDemoDoesNotSaveAndPauseCancelsPending() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
