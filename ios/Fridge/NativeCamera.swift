@@ -238,12 +238,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         latestTextRegion = regionConfigured ? barcodeRegion : .zero; lock.unlock()
         autoreleasepool {
             let image = CIImage(cvPixelBuffer: pixels)
-            let b = image.extent, side = min(b.width,b.height)*0.8
-            if let video = videoOutput, b.width > 0, b.height > 0 {
-                let r = CGRect(x:(b.width-side)/2,y:(b.height-side)/2,width:side,height:side)
-                let guide = video.metadataOutputRectConverted(fromOutputRect:r)
-                lock.lock(); latestAIGuide = guide; lock.unlock()
-            }
+            lock.lock(); latestAIGuide = visibleMetadataRegion; lock.unlock()
             // Decode the high-resolution visible image, independently of Gemma
             // and the small AI crop. Native metadata is the fast primary path.
             if regionConfigured, now - lastMetadata >= 1, now - lastFallback >= 1 {
@@ -263,7 +258,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                     emitCodes(mapped, at: now)
                 }
             }
-            guard let input = CameraImageProcessor.aiJPEG(image, context: context) else { return }
+            guard let input = CameraImageProcessor.aiJPEG(image, context: context, region:barcodeRegion) else { return }
             lock.lock(); latest = input; latestImageAt = now; lock.unlock()
             if let onFrame, let thumbnail = CameraImageProcessor.thumbnailJPEG(image, context:context) {
                 onFrame(thumbnail.base64EncodedString(), [])
@@ -326,14 +321,19 @@ enum CameraBarcodeReader {
 }
 
 enum CameraImageProcessor {
-    static func aiJPEG(_ image: CIImage, context: CIContext) -> Data? {
-        let bounds = image.extent, side = min(bounds.width, bounds.height) * 0.8
-        guard side > 0 else { return nil }
-        let roi = CGRect(x: bounds.midX - side/2, y: bounds.midY - side/2, width: side, height: side)
+    static func aiJPEG(_ image: CIImage, context: CIContext, region: CGRect = CGRect(x:0,y:0,width:1,height:1)) -> Data? {
+        let bounds = image.extent, normalized = region.intersection(CGRect(x:0,y:0,width:1,height:1))
+        guard !normalized.isNull, normalized.width > 0, normalized.height > 0 else { return nil }
+        // Same visible region as the preview, in Vision/CI bottom-left coordinates.
+        // Keep portrait/landscape composition; never discard the top and bottom.
+        let roi = CGRect(x:bounds.minX+normalized.minX*bounds.width,y:bounds.minY+normalized.minY*bounds.height,
+                         width:normalized.width*bounds.width,height:normalized.height*bounds.height)
+        let scale = min(1,1024/max(roi.width,roi.height))
+        guard scale.isFinite, scale > 0 else { return nil }
         let input = image.cropped(to: roi).transformed(by: CGAffineTransform(translationX: -roi.minX, y: -roi.minY))
-            .transformed(by: CGAffineTransform(scaleX: 384/side, y: 384/side))
-        guard let output = context.createCGImage(input, from: CGRect(x: 0, y: 0, width: 384, height: 384)) else { return nil }
-        return UIImage(cgImage: output).jpegData(compressionQuality: 0.85)
+            .transformed(by: CGAffineTransform(scaleX:scale,y:scale))
+        guard let output = context.createCGImage(input, from: input.extent.integral) else { return nil }
+        return UIImage(cgImage: output).jpegData(compressionQuality: 0.92)
     }
     static func thumbnailJPEG(_ image: CIImage, context: CIContext) -> Data? {
         let scale = 320 / max(image.extent.width, image.extent.height)

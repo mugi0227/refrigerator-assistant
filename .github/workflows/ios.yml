@@ -36,13 +36,13 @@ jobs:
       - name: Build unsigned iPhone IPA
         id: device
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
-      - name: Check inventory persistence on iOS Simulator
-        run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
       - name: Check native runtime regression tests
         if: ${{ !cancelled() && steps.device.outcome == 'success' }}
         env:
           FRIDGE_CAMERA_ONLY: ${{ inputs.camera_only && '1' || '0' }}
         run: bash scripts/test-ios-runtime.sh 2>&1 | tee runtime-test.log
+      - name: Check inventory persistence on iOS Simulator
+        run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
       - name: Save AltStore IPA
         uses: actions/upload-artifact@v4
         with:

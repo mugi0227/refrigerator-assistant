@@ -9,8 +9,7 @@ struct FoodRegion: Identifiable {
     let rect: CGRect
     var title: String { name + (count.map { " · \($0)個" } ?? " · 数量を確認") }
     static func parse(_ text: String) -> [FoodRegion] {
-        guard text.count < 24000, let a = text.firstIndex(of:"{"), let b = text.lastIndex(of:"}"), a <= b,
-              let object = try? JSONSerialization.jsonObject(with:Data(text[a...b].utf8)) as? [String:Any],
+        guard let object = NativeReading.object(from:text),
               object["kind"] as? String != "none", object["uncertain"] as? Bool != true,
               let boxes = object["boxes"] as? [[String:Any]] else { return [] }
         return boxes.prefix(6).enumerated().compactMap { index, box in
@@ -19,7 +18,7 @@ struct FoodRegion: Identifiable {
                   v.allSatisfy({ $0.isFinite && (0...1000).contains($0) }), v[2] > v[0], v[3] > v[1] else { return nil }
             let n = box["count"] as? Double
             let count = n.flatMap { $0 >= 1 && $0 <= 99 && $0.rounded() == $0 ? Int($0):nil }
-            return FoodRegion(id:index,name:FoodRules.canonical(name),count:count,
+            return FoodRegion(id:index,name:FoodRules.japaneseFoodName(name),count:count,
                 rect:CGRect(x:v[1]/1000,y:v[0]/1000,width:(v[3]-v[1])/1000,height:(v[2]-v[0])/1000))
         }
     }

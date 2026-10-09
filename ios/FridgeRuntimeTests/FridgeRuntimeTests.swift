@@ -17,7 +17,7 @@ final class FridgeRuntimeTests: XCTestCase {
         print("NATIVE_RECIPES: \(model.recipes.map(\.name))")
     }
     @MainActor func testPublicAPIStartupAndConsecutiveImages() async throws {
-        executionTimeAllowance = 360
+        executionTimeAllowance = 480
         let configURL = try XCTUnwrap(Bundle(for:Self.self).url(forResource:"config",withExtension:"json"))
         let config = try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:configURL)) as? [String:String])
         let model = NativeAppModel(), ai = model.ai
@@ -42,6 +42,7 @@ final class FridgeRuntimeTests: XCTestCase {
         await model.recognize(store:scanStore,photo:try Data(contentsOf:apple))
         let response = model.lastAnswer
         print("NATIVE_PUBLIC_FOOD: \(response)")
+        XCTAssertTrue(response.contains("りんご") || response.contains("リンゴ"),"The model itself must answer in Japanese: \(response)")
         XCTAssertEqual(model.candidate?.name,"りんご"); XCTAssertEqual(model.candidate?.quantity,2)
         XCTAssertNotNil(model.capturedImage); XCTAssertFalse(model.aiBusy); XCTAssertTrue(scanStore.active.isEmpty)
         let region = try XCTUnwrap(model.foodRegions.first)
@@ -56,6 +57,21 @@ final class FridgeRuntimeTests: XCTestCase {
             let attachment = XCTAttachment(image:image); attachment.name = "Actual Gemma food boxes"; attachment.lifetime = .keepAlways; add(attachment)
         }
         model.nextFood(); XCTAssertNil(model.capturedImage); XCTAssertTrue(model.foodRegions.isEmpty)
+        if let fixture = Bundle(for:Self.self).url(forResource:"private-expiry",withExtension:"jpg") {
+            var food = Food(); food.name = "じゃがりこ サラダ"; food.kind = "packaged"; model.candidate = food
+            model.cameraRunning = true; model.beginExpiry()
+            await model.recognizeExpiry(photo:try Data(contentsOf:fixture))
+            print("NATIVE_AI_EXPIRY: \(model.lastAnswer)")
+            XCTAssertEqual(model.aiExpiryProposal?.date,"2027-02-01",model.lastAnswer)
+            XCTAssertEqual(model.aiExpiryProposal?.type,"best_before",model.lastAnswer)
+            XCTAssertNil(model.candidate?.expiryDate); XCTAssertTrue(scanStore.active.isEmpty)
+            model.applyAIExpiry(); XCTAssertEqual(model.candidate?.expiryDate,"2027-02-01")
+            let blank = UIGraphicsImageRenderer(size:CGSize(width:384,height:384)).image { ctx in UIColor.gray.setFill(); ctx.fill(CGRect(x:0,y:0,width:384,height:384)) }.jpegData(compressionQuality:0.9)!
+            model.beginExpiry(); await model.recognizeExpiry(photo:blank)
+            print("NATIVE_AI_EXPIRY_BLANK: \(model.lastAnswer)")
+            XCTAssertNil(model.aiExpiryProposal); XCTAssertEqual(model.candidate?.expiryDate,"2027-02-01")
+            model.nextFood()
+        }
         // Exercise the same native error class the device hit, then prove the
         // next request works without rebuilding the model or retaining history.
         do {

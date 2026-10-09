@@ -106,13 +106,16 @@ final class CameraProcessingTests: XCTestCase {
         XCTAssertTrue(excluded.isEmpty, "A code outside the visible ROI must not be returned")
         let crop = try XCTUnwrap(CameraImageProcessor.aiJPEG(image, context: context))
         let cropImage = try XCTUnwrap(UIImage(data: crop)?.cgImage)
-        XCTAssertEqual(cropImage.width, 384); XCTAssertEqual(cropImage.height, 384)
-        XCTAssertTrue(try CameraBarcodeReader.detect(XCTUnwrap(CIImage(data: crop))).isEmpty,
-                      "Barcode decoding must not be limited to the AI crop")
+        XCTAssertEqual(cropImage.width, 576); XCTAssertEqual(cropImage.height, 1024)
+        XCTAssertTrue(try CameraBarcodeReader.detect(XCTUnwrap(CIImage(data: crop))).contains { $0["text"] == gtin },
+                      "The new AI image must include the package above the former central square")
+        let lower = try XCTUnwrap(CameraImageProcessor.aiJPEG(image,context:context,region:CGRect(x:0,y:0,width:1,height:0.25)))
+        XCTAssertTrue(try CameraBarcodeReader.detect(XCTUnwrap(CIImage(data:lower))).isEmpty)
+        XCTAssertNil(CameraImageProcessor.aiJPEG(image,context:context,region:.zero))
         let thumbnail = try XCTUnwrap(CameraImageProcessor.thumbnailJPEG(image, context: context))
         let thumbImage = try XCTUnwrap(UIImage(data: thumbnail)?.cgImage)
         XCTAssertLessThanOrEqual(max(thumbImage.width, thumbImage.height), 320)
-        print("FRIDGE_CAMERA_EAN13: \(gtin); visible ROI exclusion passed; AI 384px; thumbnail <=320px")
+        print("FRIDGE_CAMERA_EAN13: \(gtin); visible ROI exclusion passed; AI portrait 576x1024; thumbnail <=320px")
     }
 
     func testQRCodeDecodeWithoutModel() throws {

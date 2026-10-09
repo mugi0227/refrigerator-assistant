@@ -9,13 +9,20 @@ struct NativeScanView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var details = false
     @State private var editingExpiry = false
+    @State private var expandedPhoto = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let image = model.capturedImage {
-                FrozenFoodImage(image:image,regions:model.foodRegions,processing:model.aiBusy)
+                FrozenFoodImage(image:image,regions:model.foodRegions,processing:model.aiBusy,caption:model.expiryMode ? "印字と読み取り結果を照合してください":nil)
                     .accessibilityIdentifier("frozenAIImage")
+                    .overlay(alignment:.topTrailing) {
+                        Button { expandedPhoto = true } label: {
+                            Label("拡大",systemImage:"arrow.up.left.and.arrow.down.right").padding(.horizontal,12).frame(minHeight:44)
+                                .background(.black.opacity(0.65),in:Capsule())
+                        }.foregroundStyle(.white).padding(8).accessibilityIdentifier("expandPhoto")
+                    }
             } else if let camera = model.camera {
                 NativeCameraPreview(camera:camera,marks:model.paused ? []:model.marks,expiryMode:model.expiryMode)
                     .ignoresSafeArea().accessibilityIdentifier("cameraPreview")
@@ -35,6 +42,16 @@ struct NativeScanView: View {
         .safeAreaInset(edge:.top,spacing:0) { header }
         .safeAreaInset(edge:.bottom,spacing:0) { controls }
         .overlay { if model.aiBusy { AIProcessingFrame().ignoresSafeArea().allowsHitTesting(false) } }
+        .fullScreenCover(isPresented:$expandedPhoto) {
+            ZStack(alignment:.topTrailing) {
+                Color.black.ignoresSafeArea()
+                if let image = model.capturedImage {
+                    FrozenFoodImage(image:image,regions:model.foodRegions,processing:model.aiBusy,caption:model.expiryMode ? "期限の撮影画像":nil)
+                }
+                Button("閉じる") { expandedPhoto = false }.padding(.horizontal,20).frame(minHeight:44)
+                    .background(.black.opacity(0.8),in:Capsule()).padding()
+            }.foregroundStyle(.white).preferredColorScheme(.dark)
+        }
         .onAppear {
             if model.camera == nil { model.location = store.state.settings.location }
         }
@@ -59,7 +76,7 @@ struct NativeScanView: View {
                         Text(model.printedDetail).font(.callout).textSelection(.enabled)
                         Text(String(format:"直前のAI処理 %.2f秒",model.lastSeconds))
                         Text(model.lastAnswer).font(.callout).textSelection(.enabled)
-                        Text("緑の枠はバーコード、黄色の枠は期限に関係する文字です。AIで読む食品は中央の白い点線の内側に映してください。映像をタップするとピントが合います。候補は確認して保存するまで在庫に入りません。")
+                        Text("緑の枠はバーコード、黄色の枠は期限に関係する文字です。食品のAI認識には表示中の映像全体を使います。期限モードでは黄色い枠の中を読み取ります。映像をタップするとピントが合います。候補は確認して保存するまで在庫に入りません。")
                     }.padding()
                 }.navigationTitle("読み取りの詳細").toolbar { ToolbarItem(placement:.confirmationAction) { Button("閉じる") { details = false } } }
             }
@@ -69,7 +86,7 @@ struct NativeScanView: View {
             do {
                 guard let data = try await item.loadTransferable(type:Data.self), data.count <= 35*1024*1024, let image = UIImage(data:data) else { throw FridgeError.message("35MB以下の写真を選んでください。") }
                 // Preserve aspect ratio; squashing portrait photos changes food shapes.
-                let scale = 768 / max(image.size.width,image.size.height)
+                let scale = min(1,1024 / max(image.size.width,image.size.height))
                 let size = CGSize(width:image.size.width*scale,height:image.size.height*scale)
                 let format = UIGraphicsImageRendererFormat(); format.scale = 1
                 let jpeg = UIGraphicsImageRenderer(size:size,format:format).image { _ in image.draw(in:CGRect(origin:.zero,size:size)) }.jpegData(compressionQuality:0.85)!
@@ -103,8 +120,9 @@ struct NativeScanView: View {
                     .disabled(model.aiBusy)
                     .accessibilityLabel("スキャンのメニュー").accessibilityIdentifier("scanMenu")
             }
-            Picker("操作",selection:$model.scanMode) { Text("登録する").tag("add"); Text("使ったものを消費").tag("consume") }
+            if model.capturedImage == nil { Picker("操作",selection:$model.scanMode) { Text("登録する").tag("add"); Text("使ったものを消費").tag("consume") }
                 .pickerStyle(.segmented).disabled(model.aiBusy || model.expiryMode).onChange(of:model.scanMode) { _, _ in model.nextFood() }
+            }
         }.padding(.horizontal,20).padding(.vertical,8).foregroundStyle(.white)
             .background(LinearGradient(colors:[.black.opacity(0.82),.black.opacity(0.45),.clear],startPoint:.top,endPoint:.bottom))
             .environment(\.colorScheme,.dark)
@@ -119,17 +137,34 @@ struct NativeScanView: View {
                     .lineLimit(3).accessibilityIdentifier("scanStatus")
                 Button { details = true } label: { Image(systemName:"info.circle").frame(width:44,height:44) }.accessibilityLabel("読み取りの詳細")
             }
-            if let food = model.candidate {
-                candidate(food)
+            if let proposal = model.aiExpiryProposal {
+                VStack(alignment:.leading,spacing:8) {
+                    Text("印字：\(proposal.raw)").font(.subheadline)
+                    Text("\(FoodRules.expiryTypes[proposal.type] ?? "日付") \(proposal.date)").font(.title3.bold())
+                    Button("この日付を使う") { model.applyAIExpiry() }.frame(maxWidth:.infinity,minHeight:44)
+                        .background(.white,in:Capsule()).foregroundStyle(.black).accessibilityIdentifier("applyAIExpiry")
+                }.padding(12).background(Color(white:0.15),in:RoundedRectangle(cornerRadius:18))
+            } else if let food = model.candidate, !model.expiryMode {
+                candidate(food).disabled(model.aiBusy)
             } else if let date = model.detectedDate {
                 Label("日付 \(date) · 商品を選んでください",systemImage:"calendar").font(.subheadline)
             }
             if model.expiryMode {
+                if model.aiBusy {
+                    Button("AI読み取りを中止") { model.cancelAI(); model.scanMessage = "中止しています…" }.frame(minHeight:44)
+                } else if model.capturedImage != nil {
+                    Button("期限を撮り直す") { model.beginExpiry() }.frame(minHeight:44)
+                } else {
+                    Button { Task { await model.recognizeExpiry() } } label: {
+                        Label(model.aiReady ? "AIで期限を読む":"期限AIは設定で準備",systemImage:"sparkles").frame(maxWidth:.infinity,minHeight:48)
+                    }.background(.white,in:Capsule()).foregroundStyle(.black)
+                        .disabled(!model.aiReady || !model.cameraRunning || model.paused).accessibilityIdentifier("aiExpiryShutter")
+                }
                 HStack {
                     Button("撮影を終える") { model.endExpiry() }.frame(minHeight:44)
                     Spacer()
                     Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:44)
-                }.accessibilityIdentifier("expiryModeControls")
+                }.disabled(model.aiBusy).accessibilityIdentifier("expiryModeControls")
             } else if model.capturedImage != nil, !model.aiBusy {
                 Button { model.nextFood(); if model.camera == nil { Task { await model.startCamera(store:store) } } } label: {
                     Label("次を撮影する",systemImage:"camera").font(.headline).frame(maxWidth:.infinity,minHeight:52)
@@ -169,7 +204,7 @@ struct NativeScanView: View {
                 Spacer()
                 Button { model.cancelCandidate() } label: { Image(systemName:"xmark").frame(width:44,height:44) }.accessibilityLabel("候補を取り消す")
             }
-            ScrollView(.horizontal,showsIndicators:false) {
+            if model.capturedImage == nil { ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:8) {
                     chip(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit)":"数量を確認",icon:"number",food:food)
                     if let date = food.expiryDate {
@@ -180,6 +215,8 @@ struct NativeScanView: View {
                     }
                     if let code = food.barcode { chip(String(code.hasPrefix("0") ? code.dropFirst():Substring(code)),icon:"barcode",food:food) }
                 }
+            } } else {
+                Text(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit) · 数量は確認画面で変更できます":"数量を確認してください").font(.subheadline)
             }
             if !model.expiryMode, food.kind != "produce" {
                 HStack(spacing:12) {
@@ -280,13 +317,6 @@ final class NativePreviewSurface: UIView {
             shade.fillRule = .evenOdd; shade.fillColor = UIColor.black.withAlphaComponent(0.55).cgColor; overlay.addSublayer(shade)
             let frame = CAShapeLayer(); frame.path = UIBezierPath(roundedRect:expiryRect,cornerRadius:16).cgPath
             frame.strokeColor = UIColor.systemYellow.cgColor; frame.fillColor = UIColor.clear.cgColor; frame.lineWidth = 2; overlay.addSublayer(frame)
-        }
-        let guideRect = camera.aiGuide()
-        if guideRect.width > 0, !expiryMode {
-            let guide = CAShapeLayer()
-            guide.path = UIBezierPath(roundedRect:video.layerRectConverted(fromMetadataOutputRect:guideRect),cornerRadius:20).cgPath
-            guide.strokeColor = UIColor.white.withAlphaComponent(0.65).cgColor; guide.fillColor = UIColor.clear.cgColor
-            guide.lineWidth = 1.5; guide.lineDashPattern = [9,7]; overlay.addSublayer(guide)
         }
         for mark in marks where Date().timeIntervalSince(mark.seenAt) < 1.5 {
             var rect = video.layerRectConverted(fromMetadataOutputRect:mark.rect)

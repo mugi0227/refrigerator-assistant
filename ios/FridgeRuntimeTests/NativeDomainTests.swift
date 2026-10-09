@@ -65,6 +65,33 @@ final class NativeDomainTests: XCTestCase {
         let food = try NativeReading.observation("{\"kind\":\"produce\",\"name\":\"apple\",\"count\":null}",location:"fridge")
         XCTAssertEqual(food?.name,"りんご"); XCTAssertEqual(food?.quantity,0); XCTAssertNil(food?.expiryDate)
     }
+    func testJapaneseFoodReplyAndExpiryEvidence() throws {
+        let json = #"{"種類":"野菜・果物","名前":"にんじん","個数":3,"複数種類":false,"不確か":false,"位置":[{"名前":"にんじん","個数":3,"範囲":[100,200,800,900]}]}"#
+        XCTAssertEqual(try NativeReading.observation(json,location:"fridge")?.name,"にんじん")
+        XCTAssertEqual(FoodRegion.parse(json).first?.name,"にんじん")
+        XCTAssertEqual(FoodRules.japaneseFoodName("salad"),"サラダ")
+        XCTAssertEqual(FoodRules.japaneseFoodName("unrecognized food"),"食品（名前を確認）")
+        let good = #"{"読めた":true,"日付":"2027-02-01","印字":"賞味期限 27.02.01 LA","不確か":false}"#
+        XCTAssertEqual(NativeReading.expiryObservation(good)?.type,"best_before")
+        XCTAssertNil(NativeReading.expiryObservation(good.replacingOccurrences(of:"賞味期限",with:"製造年月日")))
+        XCTAssertNil(NativeReading.expiryObservation(good.replacingOccurrences(of:"27.02.01",with:"27.02.02")))
+        XCTAssertNil(NativeReading.expiryObservation(good.replacingOccurrences(of:"27.02.01",with:"02.01")))
+        XCTAssertNil(NativeReading.expiryObservation(good.replacingOccurrences(of:"false",with:"true")))
+    }
+    @MainActor func testAIExpiryRequiresSeparateConfirmation() throws {
+        let store = HouseholdStore(file:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let model = NativeAppModel(); model.cameraRunning = true
+        model.codes([["text":"4901330578909"]],store:store); let selected = model.candidate?.id
+        model.beginExpiry()
+        model.aiExpiryProposal = PrintedDate(date:"2027-02-01",type:"best_before",raw:"賞味期限 27.02.01")
+        XCTAssertNil(model.candidate?.expiryDate); XCTAssertTrue(store.active.isEmpty)
+        model.aiBusy = true; model.applyAIExpiry(); XCTAssertNil(model.candidate?.expiryDate)
+        model.aiBusy = false; model.applyAIExpiry()
+        XCTAssertEqual(model.candidate?.expiryDate,"2027-02-01"); XCTAssertEqual(model.candidate?.id,selected)
+        XCTAssertFalse(model.expiryMode); XCTAssertNil(model.aiExpiryProposal); XCTAssertTrue(store.active.isEmpty)
+        model.beginExpiry(); model.aiExpiryProposal = PrintedDate(date:"2028-01-01",type:"unknown",raw:"28.01.01")
+        model.nextFood(); model.applyAIExpiry(); XCTAssertNil(model.candidate)
+    }
     func testFoodRegionCoordinatesRejectInventedOrInvalidPositions() {
         let json = #"{"kind":"produce","boxes":[{"label":"apple","count":2,"box_2d":[200,100,700,900]},{"label":"bad","count":1,"box_2d":[-1,0,1001,999]}]}"#
         let boxes = FoodRegion.parse(json)

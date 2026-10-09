@@ -17,6 +17,12 @@ enum FoodRules {
         let aliases = ["apple":"りんご","apples":"りんご","リンゴ":"りんご","林檎":"りんご","tomato":"トマト","tomatoes":"トマト","とまと":"トマト","carrot":"にんじん","carrots":"にんじん","人参":"にんじん","ニンジン":"にんじん","cabbage":"キャベツ","broccoli":"ブロッコリー","spinach":"ほうれん草","cucumber":"きゅうり","キュウリ":"きゅうり","胡瓜":"きゅうり","onion":"玉ねぎ","onions":"玉ねぎ","たまねぎ":"玉ねぎ","タマネギ":"玉ねぎ","potato":"じゃがいも","potatoes":"じゃがいも","ジャガイモ":"じゃがいも","green pepper":"ピーマン","bell pepper":"ピーマン","eggplant":"なす","ナス":"なす","茄子":"なす","lettuce":"レタス","daikon":"大根","だいこん":"大根","banana":"バナナ","bananas":"バナナ","mushroom":"きのこ","mushrooms":"きのこ","egg":"卵","eggs":"卵","たまご":"卵","milk":"牛乳"]
         return aliases[value.lowercased()] ?? value
     }
+    static func japaneseFoodName(_ text: String) -> String {
+        let value = canonical(text)
+        let extra = ["salad":"サラダ","pork":"豚肉","beef":"牛肉","chicken":"鶏肉","fish":"魚","rice":"ご飯","bread":"パン","cheese":"チーズ","yogurt":"ヨーグルト","orange":"オレンジ","lemon":"レモン","strawberry":"いちご","grapes":"ぶどう","pumpkin":"かぼちゃ","sweet potato":"さつまいも"]
+        if let name = extra[value.lowercased()] { return name }
+        return value.range(of:"[ぁ-んァ-ヶ一-龯]",options:.regularExpression) != nil ? value:"食品（名前を確認）"
+    }
     static func dateFormatter() -> DateFormatter {
         let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.locale = Locale(identifier:"en_US_POSIX"); f.timeZone = TimeZone(secondsFromGMT:0); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false; return f
     }

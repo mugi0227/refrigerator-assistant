@@ -4,6 +4,7 @@ struct FrozenFoodImage: View {
     let image: UIImage
     let regions: [FoodRegion]
     let processing: Bool
+    var caption: String? = nil
     private let colors: [Color] = [.mint,.yellow,.cyan,.pink,.orange,.green]
     var body: some View {
         GeometryReader { proxy in
@@ -24,8 +25,8 @@ struct FrozenFoodImage: View {
                         .offset(x:max(frame.minX+8,min(rect.minX,frame.maxX-188)),y:max(frame.minY+4,rect.minY-32))
                 }
                 if !processing {
-                    Text(regions.isEmpty ? "位置を特定できませんでした":"AIの推定 · 数量も確認してください")
-                        .font(.caption).padding(8).background(.black.opacity(0.8),in:Capsule())
+                    Text(caption ?? (regions.isEmpty ? "位置を特定できませんでした":"AIの推定 · 数量も確認してください"))
+                        .font(.caption).foregroundStyle(.white).padding(8).background(.black.opacity(0.8),in:Capsule())
                         .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.bottom).padding(.bottom,4)
                 }
             }.frame(width:proxy.size.width,height:proxy.size.height).clipped()
