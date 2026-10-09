@@ -39,7 +39,7 @@ final class FridgeRuntimeTests: XCTestCase {
         let apple = try XCTUnwrap(Bundle.main.url(forResource:"apple",withExtension:"png",subdirectory:"Probe"))
         let scanStore = HouseholdStore(file:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         model.aiReady = true
-        await model.recognize(store:scanStore,photo:Data(contentsOf:apple))
+        await model.recognize(store:scanStore,photo:try Data(contentsOf:apple))
         let response = model.lastAnswer
         print("NATIVE_PUBLIC_FOOD: \(response)")
         XCTAssertEqual(model.candidate?.name,"りんご"); XCTAssertEqual(model.candidate?.quantity,2)
