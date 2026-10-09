@@ -16,8 +16,10 @@ final class FridgeRuntimeTests: XCTestCase {
         XCTAssertNil(model.alert,model.alert ?? "")
         XCTAssertEqual(model.recipes.count,3)
         XCTAssertTrue(model.recipes.allSatisfy { !$0.name.isEmpty && !$0.steps.isEmpty })
+        XCTAssertTrue(model.recipes.allSatisfy { $0.name.range(of:"[ぁ-んァ-ヶ一-龯]",options:.regularExpression) != nil },"Recipe titles must be Japanese")
         print("NATIVE_RECIPES: \(model.recipes.map(\.name))")
         try await model.ai.unload()
+        attachNativeLogs()
     }
     func testPublicAPIStartupAndConsecutiveImages() async throws {
         executionTimeAllowance = 240
@@ -41,5 +43,17 @@ final class FridgeRuntimeTests: XCTestCase {
         let food = try NativeReading.observation(response,location:"fridge")
         XCTAssertEqual(food?.name,"りんご"); XCTAssertNil(food?.expiryDate)
         try await ai.unload()
+        attachNativeLogs()
+    }
+    private func attachNativeLogs() {
+        let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("NativeAI")
+        for folder in (try? FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:nil)) ?? [] {
+            for name in ["phases.txt","native-stderr.txt"] {
+                if let data = try? Data(contentsOf:folder.appendingPathComponent(name)) {
+                    let attachment = XCTAttachment(data:data,uniformTypeIdentifier:"public.plain-text")
+                    attachment.name = "NativeAI-\(folder.lastPathComponent)-\(name)"; attachment.lifetime = .keepAlways; add(attachment)
+                }
+            }
+        }
     }
 }
