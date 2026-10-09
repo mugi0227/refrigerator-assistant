@@ -225,14 +225,12 @@ struct NativeScanView: View {
         VStack(alignment:.leading,spacing:12) {
             HStack(spacing:12) {
                 FoodIconView(name:food.name,size:40).frame(width:52,height:52).background(.white.opacity(0.12),in:RoundedRectangle(cornerRadius:14))
-                VStack(alignment:.leading,spacing:4) {
-                    Text(food.name.isEmpty ? "商品名を確認":food.name).font(.title3.bold()).lineLimit(2)
-                    steps(food)
-                }
+                Text(food.name.isEmpty ? "商品名を確認":food.name).font(.title3.bold()).lineLimit(2)
                 Spacer()
                 Button("編集") { model.registrationForReview(); editing = food }.font(.subheadline).frame(minWidth:44,minHeight:44)
                 Button { model.cancelCandidate(); resumeCamera() } label: { Image(systemName:"xmark").frame(width:44,height:44) }.accessibilityLabel("候補を取り消す")
             }
+            steps(food)
             if model.capturedImage == nil { ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:8) {
                     chip(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit)":"数量を確認",icon:"number",food:food)
