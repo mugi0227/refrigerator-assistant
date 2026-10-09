@@ -18,9 +18,6 @@ targets:
     sources:
       - path: Fridge
         excludes: [Resources, Info.plist]
-      - path: Fridge/Resources/Web
-        type: folder
-        buildPhase: resources
       - path: Fridge/Resources/Probe
         type: folder
         buildPhase: resources
@@ -47,8 +44,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: jp.mugilab.fridge
-        MARKETING_VERSION: 0.2.9
-        CURRENT_PROJECT_VERSION: 10
+        MARKETING_VERSION: 0.3.0
+        CURRENT_PROJECT_VERSION: 11
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: '1,2'
         CODE_SIGNING_ALLOWED: NO

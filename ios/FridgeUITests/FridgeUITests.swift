@@ -1,34 +1,21 @@
 import XCTest
-
 final class FridgeUITests: XCTestCase {
-    func testNativeSettingsAndInventorySurviveRelaunch() {
+    func testNativePersistenceAndNoWebView() {
         continueAfterFailure = false
-        let app = XCUIApplication()
-        app.launch()
-        let addFood = app.buttons["＋ 手入力"]
-        XCTAssertTrue(addFood.waitForExistence(timeout: 20))
-        addFood.tap()
-        let name = app.textFields["食品名"]
-        XCTAssertTrue(name.waitForExistence(timeout: 5))
-        name.tap(); name.typeText("ios-persistence-probe")
-        XCTAssertEqual(name.value as? String, "ios-persistence-probe")
-        // WKWebView's keyboard covers the form submit button. Dismiss it like a
-        // person would before tapping, instead of sending a tap through it.
-        let done = app.toolbars.buttons["Done"].firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
-        done.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-        app.buttons["追加する"].tap()
-        XCTAssertTrue(app.staticTexts["ios-persistence-probe"].waitForExistence(timeout: 10), app.debugDescription)
-        app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["ios-persistence-probe"].waitForExistence(timeout: 15))
-        app.buttons["設定を開く"].tap()
-        app.buttons["野菜の読み取り・献立の準備（任意）"].tap()
-        let native = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "iOSネイティブ")).firstMatch
-        XCTAssertTrue(native.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["モデルを保存して起動"].isEnabled)
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Native settings"; screenshot.lifetime = .keepAlways
-        add(screenshot)
+        let app = XCUIApplication(); app.launch()
+        XCTAssertTrue(app.buttons["＋ 手入力"].waitForExistence(timeout:20)); XCTAssertEqual(app.webViews.count,0)
+        app.buttons["＋ 手入力"].tap()
+        let name = app.textFields["foodName"]; XCTAssertTrue(name.waitForExistence(timeout:5)); name.tap(); name.typeText("native-persistence-probe")
+        app.buttons["saveFoodToolbar"].tap()
+        XCTAssertTrue(app.staticTexts["native-persistence-probe"].firstMatch.waitForExistence(timeout:10))
+        app.terminate(); app.launch(); XCTAssertTrue(app.staticTexts["native-persistence-probe"].firstMatch.waitForExistence(timeout:10))
+        for tab in ["買い物","スキャン","献立","設定"] {
+            app.tabBars.buttons[tab].tap(); XCTAssertEqual(app.webViews.count,0)
+            let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = "Native \(tab)"; shot.lifetime = .keepAlways; add(shot)
+        }
+        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.0 · ネイティブ版"].exists)
+        app.tabBars.buttons["買い物"].tap(); app.textFields["買うもの"].tap(); app.textFields["買うもの"].typeText("bread"); app.buttons["追加"].tap()
+        XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
+        app.terminate(); app.launch(); app.tabBars.buttons["買い物"].tap(); XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
     }
 }

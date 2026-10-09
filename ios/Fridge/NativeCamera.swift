@@ -207,11 +207,11 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                 lastFallback = now
                 if let codes = try? CameraBarcodeReader.detect(image, region: barcodeRegion) { emitCodes(codes, at: now) }
             }
-            guard let input = CameraImageProcessor.aiJPEG(image, context: context),
-                  let thumbnail = CameraImageProcessor.thumbnailJPEG(image, context: context) else { return }
+            guard let input = CameraImageProcessor.aiJPEG(image, context: context) else { return }
             lock.lock(); latest = input; lock.unlock()
-            // Hidden HTML image is only a thumbnail, never the visible preview.
-            onFrame?(thumbnail.base64EncodedString(), [])
+            if let onFrame, let thumbnail = CameraImageProcessor.thumbnailJPEG(image, context:context) {
+                onFrame(thumbnail.base64EncodedString(), [])
+            }
         }
     }
 }

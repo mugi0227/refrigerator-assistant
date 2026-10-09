@@ -174,7 +174,7 @@ private final class ProbeJournal {
     deinit { try? handle.close() }
 }
 
-private final class ProbeStderr {
+final class ProbeStderr {
     private var saved: Int32 = -1
     init(url: URL) throws {
         let fd = Darwin.open(url.path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)

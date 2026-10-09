@@ -4,7 +4,7 @@ import SwiftUI
 struct FridgeApp: App {
     var body: some Scene {
         WindowGroup {
-            FridgeWebView()
+            NativeRootView()
                 .background(Color(red: 0.969, green: 0.973, blue: 0.949).ignoresSafeArea())
                 .preferredColorScheme(.light)
         }
