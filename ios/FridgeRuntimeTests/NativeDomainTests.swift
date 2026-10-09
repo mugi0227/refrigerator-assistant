@@ -125,6 +125,42 @@ final class NativeDomainTests: XCTestCase {
         model.nextFood(); XCTAssertNil(model.capturedImage); XCTAssertNil(model.candidate); XCTAssertFalse(model.paused)
         XCTAssertTrue(store.active.isEmpty)
     }
+    @MainActor func testSaveAndCancelRearmBarcodeAfterFrozenExpiry() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:path) }
+        let store = HouseholdStore(file:path), model = NativeAppModel(); model.cameraRunning = true
+        model.codes([["text":"4901330578909"]],store:store)
+        var first = try XCTUnwrap(model.candidate); first.name = "牛乳"
+        model.beginExpiry(); model.capturedImage = UIImage(); model.paused = true
+        try model.confirm(first,store:store); try model.confirm(first,store:store)
+        XCTAssertEqual(store.state.events.count,1)
+        XCTAssertNil(model.capturedImage); XCTAssertFalse(model.paused); XCTAssertFalse(model.expiryMode)
+        model.codes([["text":"4901330578909"]],store:store); XCTAssertNil(model.candidate)
+        model.codes([["text":"4901234567894"]],store:store)
+        XCTAssertEqual(model.candidate?.barcode,"04901234567894")
+        model.beginExpiry(); model.capturedImage = UIImage(); model.paused = true
+        model.cancelCandidate()
+        XCTAssertNil(model.capturedImage); XCTAssertFalse(model.expiryMode); XCTAssertFalse(model.paused)
+        model.codes([["text":"4901234567894"]],store:store); XCTAssertNil(model.candidate)
+        try await Task.sleep(nanoseconds:1_600_000_000)
+        model.codes([["text":"4901234567894"]],store:store)
+        XCTAssertEqual(model.candidate?.barcode,"04901234567894")
+        XCTAssertEqual(store.state.events.count,1)
+        model.cancelCandidate(); model.nextFood()
+        model.codes([["text":"4901234567894"]],store:store)
+        XCTAssertNotNil(model.candidate)
+    }
+    @MainActor func testInvalidDirectSaveKeepsCandidateForEditing() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = HouseholdStore(file:path), model = NativeAppModel()
+        var food = Food(); food.name = "牛乳"; food.expiryDate = "2027-02-01"
+        model.candidate = food; model.capturedImage = UIImage()
+        XCTAssertThrowsError(try model.confirm(food,store:store))
+        XCTAssertEqual(model.candidate?.id,food.id); XCTAssertNotNil(model.capturedImage)
+        XCTAssertTrue(store.active.isEmpty)
+        food.expiryType = "best_before"; try model.confirm(food,store:store)
+        XCTAssertEqual(store.active.count,1); XCTAssertNil(model.candidate); XCTAssertNil(model.capturedImage)
+    }
     @MainActor func testCountdownCannotCommitAfterTargetChangeOrReview() async throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:path) }

@@ -56,7 +56,7 @@ struct NativeScanView: View {
             if model.camera == nil { model.location = store.state.settings.location }
             if model.capturedImage == nil, !model.demo { Task { await model.startCamera(store:store) } }
         }
-        .sheet(item:$editing,onDismiss:{ model.paused = false }) { food in
+        .sheet(item:$editing,onDismiss:{ model.paused = false; if model.candidate == nil { resumeCamera() } }) { food in
             FoodEditor(food:food) { next in try model.confirm(next,store:store) }
         }
         .sheet(isPresented:$editingExpiry,onDismiss:{ model.paused = false }) {
@@ -134,13 +134,7 @@ struct NativeScanView: View {
     }
     private var controls: some View {
         VStack(spacing:12) {
-            HStack(alignment:.top,spacing:8) {
-                if model.aiBusy { ProgressView().tint(.white) }
-                Text(model.paused ? "一時停止中":String(model.scanMessage.split(separator:"\n").first ?? ""))
-                    .font(.subheadline.weight(.medium)).frame(maxWidth:.infinity,alignment:.leading)
-                    .lineLimit(3).accessibilityIdentifier("scanStatus")
-                Button { details = true } label: { Image(systemName:"info.circle").frame(width:44,height:44) }.accessibilityLabel("読み取りの詳細")
-            }
+            scanStatus
             if let proposal = model.aiExpiryProposal {
                 VStack(alignment:.leading,spacing:8) {
                     Text("印字：\(proposal.raw)").font(.subheadline)
@@ -174,9 +168,7 @@ struct NativeScanView: View {
                 }.disabled(model.aiBusy).accessibilityIdentifier("expiryModeControls")
             } else if model.capturedImage != nil, !model.aiBusy {
                 if model.candidate == nil { Button("この写真の期限を読み取る") { model.beginExpiry() }.frame(minHeight:44) }
-                Button { model.nextFood(); if model.camera == nil { Task { await model.startCamera(store:store) } } } label: {
-                    Label("次を撮影する",systemImage:"camera").font(.headline).frame(maxWidth:.infinity,minHeight:52)
-                }.background(.white.opacity(0.14),in:Capsule()).accessibilityIdentifier("nextCapture")
+                nextProductButton
             } else { HStack(alignment:.center) {
                 PhotosPicker(selection:$selectedPhoto,matching:.images) { Image(systemName:"photo").font(.title2).frame(width:52,height:52).background(.white.opacity(0.14),in:Circle()) }
                     .accessibilityLabel("写真から読み取る").disabled(model.aiBusy || model.paused)
@@ -205,17 +197,45 @@ struct NativeScanView: View {
                 }.accessibilityIdentifier("rawRecognition")
             }
             if model.candidate == nil, !model.aiBusy, model.capturedImage == nil, !model.expiryMode {
-                Button("次の食品・次の1個") { model.nextFood() }.font(.subheadline).frame(minHeight:44)
+                nextProductButton
             }
         }.padding(.horizontal,20).padding(.top,18).padding(.bottom,8).foregroundStyle(.white)
             .background(LinearGradient(colors:[.clear,.black.opacity(0.86),.black],startPoint:.top,endPoint:.bottom))
+    }
+    private var scanStatus: some View {
+        HStack(spacing:12) {
+            if model.aiBusy { ProgressView().tint(.mint).frame(width:28) }
+            else { Image(systemName:model.scanNotice?.icon ?? (model.paused ? "pause.circle.fill":model.expiryMode ? "calendar.viewfinder":"viewfinder"))
+                .font(.title3).foregroundStyle(.mint).frame(width:28) }
+            VStack(alignment:.leading,spacing:3) {
+                Text(model.scanNotice?.title ?? (model.aiBusy ? "読み取り中":model.paused ? "一時停止中":model.expiryMode ? "期限を確認":model.candidate != nil ? "候補を確認":"次の商品をどうぞ"))
+                    .font(.subheadline.bold()).accessibilityIdentifier("scanStatus")
+                Text(model.scanNotice?.message ?? String(model.scanMessage.split(separator:"\n").first ?? ""))
+                    .font(.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(2)
+            }.frame(maxWidth:.infinity,alignment:.leading)
+            Button { details = true } label: { Image(systemName:"info.circle").frame(width:44,height:44) }
+                .accessibilityLabel("読み取りの詳細")
+        }.padding(.leading,14).padding(.trailing,4).padding(.vertical,8)
+            .background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:18))
+            .overlay(RoundedRectangle(cornerRadius:18).stroke(.white.opacity(0.16),lineWidth:1))
+            .environment(\.colorScheme,.dark)
+    }
+    private var nextProductButton: some View {
+        Button { model.nextFood(); resumeCamera() } label: {
+            Label("次の商品",systemImage:"arrow.right.circle.fill").font(.headline).frame(maxWidth:.infinity,minHeight:50)
+        }.background(.white.opacity(0.22),in:Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.45),lineWidth:1)).accessibilityIdentifier("nextCapture")
+    }
+    private func resumeCamera() {
+        if model.camera == nil, !model.demo { Task { await model.startCamera(store:store) } }
     }
     private func candidate(_ food: Food) -> some View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
                 Text(food.name.isEmpty ? "商品名を確認":food.name).font(.title3.bold()).lineLimit(2)
                 Spacer()
-                Button { model.cancelCandidate() } label: { Image(systemName:"xmark").frame(width:44,height:44) }.accessibilityLabel("候補を取り消す")
+                Button("編集") { model.registrationForReview(); editing = food }.font(.subheadline).frame(minWidth:44,minHeight:44)
+                Button { model.cancelCandidate(); resumeCamera() } label: { Image(systemName:"xmark").frame(width:44,height:44) }.accessibilityLabel("候補を取り消す")
             }
             if model.capturedImage == nil { ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:8) {
@@ -229,17 +249,23 @@ struct NativeScanView: View {
                     if let code = food.barcode { chip(String(code.hasPrefix("0") ? code.dropFirst():Substring(code)),icon:"barcode",food:food) }
                 }
             } } else {
-                Text(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit) · 数量は確認画面で変更できます":"数量を確認してください").font(.subheadline)
+                Text(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit) · 数量は「編集」で変更できます":"数量を確認してください").font(.subheadline)
+                if let date = food.expiryDate { Text("\(FoodRules.expiryTypes[food.expiryType] ?? "日付") \(date)").font(.subheadline) }
             }
             if !model.expiryMode, food.kind != "produce" {
                 HStack(spacing:12) {
-                    Button { model.beginExpiry() } label: { Label(food.expiryDate == nil ? "期限を読み取る":"期限を再読取",systemImage:"viewfinder").frame(minHeight:44) }
+                    Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:48).foregroundStyle(.white.opacity(0.8))
+                    Button { model.beginExpiry() } label: {
+                        Label(food.expiryDate == nil ? "期限を読み取る":"期限を再読取",systemImage:"viewfinder")
+                            .fontWeight(.bold).frame(maxWidth:.infinity,minHeight:50)
+                    }.background(.mint,in:RoundedRectangle(cornerRadius:16)).foregroundStyle(.black)
                         .disabled(!model.cameraRunning && !model.demo && model.capturedImage == nil).accessibilityIdentifier("readExpiry")
-                    Spacer(minLength:0)
-                    Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:44)
                 }.font(.subheadline)
             }
-            Button { model.registrationForReview(); editing = food } label: {
+            Button {
+                do { try model.confirm(food,store:store); resumeCamera() }
+                catch { model.scanMessage = error.localizedDescription; model.alert = error.localizedDescription }
+            } label: {
                 Label(model.scanMode == "consume" ? "確認して消費":"確認して登録",systemImage:"checkmark").font(.headline).frame(maxWidth:.infinity,minHeight:46)
             }.background(.white,in:Capsule()).foregroundStyle(.black).accessibilityIdentifier("reviewCandidate")
         }.padding(16).background(Color(white:0.15),in:RoundedRectangle(cornerRadius:22))
@@ -275,7 +301,7 @@ private struct ExpiryEditor: View {
                     DatePicker("日付",selection:$date,displayedComponents:.date)
                         .datePickerStyle(.graphical).environment(\.timeZone,TimeZone(secondsFromGMT:0)!)
                 }
-                Text("ここでは候補の期限だけを変更します。在庫への登録は、次の確認画面で行います。")
+                Text("ここでは候補の期限だけを変更します。戻って「確認して登録」を押すと在庫に入ります。")
                     .font(.footnote).foregroundStyle(.secondary)
             }.navigationTitle("期限を入力").navigationBarTitleDisplayMode(.inline)
                 .toolbar {

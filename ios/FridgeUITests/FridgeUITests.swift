@@ -13,7 +13,7 @@ final class FridgeUITests: XCTestCase {
             app.tabBars.buttons[tab].tap(); XCTAssertEqual(app.webViews.count,0)
             let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = "Native \(tab)"; shot.lifetime = .keepAlways; add(shot)
         }
-        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.4 · ネイティブ版"].exists)
+        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.5 · ネイティブ版"].exists)
         app.tabBars.buttons["買い物"].tap(); app.textFields["買うもの"].tap(); app.textFields["買うもの"].typeText("bread"); app.buttons["追加"].tap()
         XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
         app.terminate(); app.launch(); app.tabBars.buttons["買い物"].tap(); XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
@@ -33,9 +33,7 @@ final class FridgeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["reviewCandidate"].waitForExistence(timeout:5))
         let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = "Scanner candidate chips"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["reviewCandidate"].tap()
-        XCTAssertTrue(app.textFields["foodName"].waitForExistence(timeout:5))
-        XCTAssertEqual(app.textFields["foodName"].value as? String,"牛乳")
-        app.buttons["saveFoodToolbar"].tap()
+        XCTAssertFalse(app.textFields["foodName"].exists)
         XCTAssertFalse(app.buttons["reviewCandidate"].exists)
         XCTAssertTrue(app.staticTexts["scanStatus"].label.contains("デモ"))
     }
@@ -51,8 +49,9 @@ final class FridgeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["閉じる"].waitForExistence(timeout:5))
         let enlarged = XCTAttachment(screenshot:app.screenshot()); enlarged.name = "Full photo with food labels"; enlarged.lifetime = .keepAlways; add(enlarged)
         app.buttons["閉じる"].tap()
-        app.buttons["reviewCandidate"].tap(); app.buttons["saveFoodToolbar"].tap()
+        app.buttons["reviewCandidate"].tap()
         XCTAssertFalse(app.buttons["reviewCandidate"].exists)
+        XCTAssertFalse(app.images["AIに渡した写真"].exists)
         XCTAssertTrue(app.buttons["nextCapture"].exists)
     }
 }
