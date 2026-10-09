@@ -2,15 +2,11 @@ import XCTest
 import UIKit
 @testable import Fridge
 final class FridgeRuntimeTests: XCTestCase {
-    @MainActor func testRecipesThroughNativeController() async throws {
-        executionTimeAllowance = 240
-        let configURL = try XCTUnwrap(Bundle(for:Self.self).url(forResource:"config",withExtension:"json"))
-        let config = try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:configURL)) as? [String:String])
+    @MainActor private func checkRecipesThroughNativeController(_ model: NativeAppModel) async throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:path) }
-        let store = HouseholdStore(file:path), model = NativeAppModel()
+        let store = HouseholdStore(file:path)
         for name in ["トマト","卵","玉ねぎ"] { var food = Food(); food.name = name; food.quantity = 3; try store.put(food) }
-        try await model.ai.load(URL(fileURLWithPath:try XCTUnwrap(config["modelPath"]))) { print("RECIPE_STARTUP: \($0)") }
         model.aiReady = true
         await model.makeRecipes(store:store)
         XCTAssertNil(model.alert,model.alert ?? "")
@@ -18,14 +14,12 @@ final class FridgeRuntimeTests: XCTestCase {
         XCTAssertTrue(model.recipes.allSatisfy { !$0.name.isEmpty && !$0.steps.isEmpty })
         XCTAssertTrue(model.recipes.allSatisfy { $0.name.range(of:"[ぁ-んァ-ヶ一-龯]",options:.regularExpression) != nil },"Recipe titles must be Japanese")
         print("NATIVE_RECIPES: \(model.recipes.map(\.name))")
-        try await model.ai.unload()
-        attachNativeLogs()
     }
-    func testPublicAPIStartupAndConsecutiveImages() async throws {
-        executionTimeAllowance = 240
+    @MainActor func testPublicAPIStartupAndConsecutiveImages() async throws {
+        executionTimeAllowance = 360
         let configURL = try XCTUnwrap(Bundle(for:Self.self).url(forResource:"config",withExtension:"json"))
         let config = try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:configURL)) as? [String:String])
-        let ai = NativeAI()
+        let model = NativeAppModel(), ai = model.ai
         try await ai.load(URL(fileURLWithPath:try XCTUnwrap(config["modelPath"]))) { print("NATIVE_READY_PHASE: \($0)") }
         let text = try await ai.run("Reply exactly BLUE-47, with no other words.")
         XCTAssertTrue(text.contains("BLUE-47"),text)
@@ -58,6 +52,10 @@ final class FridgeRuntimeTests: XCTestCase {
         let recovered = try await ai.run("Reply exactly BLUE-47, with no other words.")
         XCTAssertTrue(recovered.contains("BLUE-47"),recovered)
         print("NATIVE_ERROR_RECOVERY: \(recovered)")
+        // Match normal use: scanning and recipes share one loaded engine.
+        // Recreating multiple engines in one process intermittently hangs the
+        // upstream runtime during the next Apple startup check on Simulator.
+        try await checkRecipesThroughNativeController(model)
         try await ai.unload()
         attachNativeLogs()
     }

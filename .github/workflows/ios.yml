@@ -43,8 +43,9 @@ jobs:
             device-build.log
             runtime-test.log
             ios/build-runtime/Runtime.xcresult
-            ios/build-runtime/summary.json
-            ios/build-runtime/attachments
+            ios/build-runtime/Reference.xcresult
+            ios/build-runtime/*-summary.json
+            ios/build-runtime/*-attachments
             ios/build-runtime/native-logs
             ios/build-runtime/probe-logs
             simulator-test.log

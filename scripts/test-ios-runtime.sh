@@ -42,14 +42,28 @@ PY
     mkdir -p ios/build-runtime/native-logs
     cp -R "$DATA_CONTAINER/Documents/NativeAI/." ios/build-runtime/native-logs/
   fi
-  if [ -d ios/build-runtime/Runtime.xcresult ]; then
-    xcrun xcresulttool get test-results summary --path ios/build-runtime/Runtime.xcresult > ios/build-runtime/summary.json || true
-    xcrun xcresulttool export attachments --path ios/build-runtime/Runtime.xcresult --output-path ios/build-runtime/attachments || true
-  fi
+  for suite in Runtime Reference; do
+    if [ -d "ios/build-runtime/$suite.xcresult" ]; then
+      xcrun xcresulttool get test-results summary --path "ios/build-runtime/$suite.xcresult" > "ios/build-runtime/$suite-summary.json" || true
+      xcrun xcresulttool export attachments --path "ios/build-runtime/$suite.xcresult" --output-path "ios/build-runtime/$suite-attachments" || true
+    fi
+  done
 }
 trap collect_results EXIT
+# Keep the production engine's complete food -> recovery -> recipes sequence in
+# one process. The unmodified upstream control gets a fresh test-host process;
+# native model teardown/reinitialization is a known unresolved runtime condition.
+result=0
 xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
   -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
   -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
   -parallel-testing-enabled NO -test-timeouts-enabled YES \
-  -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 240 "$@" test
+  -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 360 \
+  -skip-testing:FridgeRuntimeTests/ReferenceProbeTests "$@" test || result=1
+xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
+  -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
+  -resultBundlePath ios/build-runtime/Reference.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+  -parallel-testing-enabled NO -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 240 \
+  -only-testing:FridgeRuntimeTests/ReferenceProbeTests "$@" test-without-building || result=1
+exit "$result"
