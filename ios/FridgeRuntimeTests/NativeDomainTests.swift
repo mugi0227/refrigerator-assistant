@@ -64,11 +64,32 @@ final class NativeDomainTests: XCTestCase {
         let store = HouseholdStore(file:path), model = NativeAppModel()
         var food = Food(); food.name = "トマト"
         model.stage(food,store:store)
-        model.registrationForReview()
         try await Task.sleep(nanoseconds:5_100_000_000)
         XCTAssertTrue(store.active.isEmpty)
+        XCTAssertEqual(model.candidate?.name,"トマト"); XCTAssertEqual(model.countdown,0)
+        try model.confirm(food,store:store); try model.confirm(food,store:store)
+        XCTAssertEqual(store.active.count,1); XCTAssertEqual(store.state.events.count,1)
+        model.nextFood(); model.stage(food,store:store); model.registrationForReview()
+        XCTAssertNil(model.pending)
         model.paused = false; model.stage(food,store:store); model.nextFood()
         XCTAssertNil(model.pending); XCTAssertEqual(model.countdown,0)
+    }
+    @MainActor func testBarcodeThenExpiryUsesDateNotRawTextAndNeverSaves() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = HouseholdStore(file:path), model = NativeAppModel(); model.cameraRunning = true
+        model.codes([["text":"4901330578909","x":"0.2","y":"0.3","width":"0.2","height":"0.1"]],store:store)
+        XCTAssertEqual(model.marks.count,1)
+        XCTAssertEqual(model.candidate?.barcode,"04901330578909")
+        func line(_ suffix: String) -> [[String:Any]] { [["text":"賞味期限 2026.10.31 \(suffix)","confidence":0.95,"x":0.2,"y":0.3,"width":0.4,"height":0.05,"metadataX":0.3,"metadataY":0.2,"metadataWidth":0.05,"metadataHeight":0.4]] }
+        model.acceptPrinted(line("AB"),stamp:1)
+        XCTAssertNil(model.candidate?.expiryDate); XCTAssertTrue(model.marks.contains { $0.isDate })
+        model.acceptPrinted(line("CD"),stamp:1); XCTAssertNil(model.candidate?.expiryDate)
+        model.acceptPrinted(line("CD"),stamp:2)
+        XCTAssertEqual(model.candidate?.expiryDate,"2026-10-31")
+        XCTAssertEqual(model.candidate?.expiryType,"best_before"); XCTAssertTrue(store.active.isEmpty)
+        model.registrationForReview(); model.acceptPrinted(line("EF"),stamp:3)
+        XCTAssertEqual(model.candidate?.expiryDate,"2026-10-31")
+        model.nextFood(); XCTAssertNil(model.candidate); XCTAssertTrue(model.marks.isEmpty)
     }
     @MainActor func testDemoDoesNotSaveAndPauseCancelsPending() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

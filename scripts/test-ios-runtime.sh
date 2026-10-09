@@ -21,7 +21,7 @@ PY
 node scripts/prepare-ios.mjs
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
-SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); phones=[(tuple(int(n) for n in r.split("iOS-")[1].split("-")),v["name"],v["udid"]) for r,ds in d["devices"].items() if "iOS-" in r for v in ds if v["name"].startswith("iPhone")]; print(max(phones)[2])')
+SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 scripts/choose-ios-simulator.py)
 collect_results() {
   # XCTest may use a cloned simulator container rather than the selected UDID.
   # Copy only this app's uniquely named diagnostics, including after a timeout.

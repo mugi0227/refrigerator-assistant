@@ -4,19 +4,19 @@ import LiteRTFoundation
 
 final class NativeChatCancellation: @unchecked Sendable {
     private let lock = NSLock()
-    private var chat: LiteRTChat?
+    private var chat: FridgeChat?
     private var cancelled = false
     private var revision = 0
     var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
     var cancellationRevision: Int { lock.lock(); defer { lock.unlock() }; return revision }
-    func set(_ value: LiteRTChat?) { lock.lock(); chat = value; lock.unlock() }
+    func set(_ value: FridgeChat?) { lock.lock(); chat = value; lock.unlock() }
     func cancel() { lock.lock(); cancelled = true; revision += 1; let value = chat; lock.unlock(); try? value?.cancel() }
 }
 
-// Uses precisely the public API that passed on the physical device. No copied
-// Engine, Conversation, sampler, output limit or alternate warmup implementation.
+// Preserve the proven upstream initialization/stream body. Renew only the
+// conversation before each user request, never retaining earlier food images.
 actor NativeAI {
-    private var chat: LiteRTChat?
+    private var chat: FridgeChat?
     private var busy = false, turns = 0
     nonisolated let cancellation = NativeChatCancellation()
     private var capture: ProbeStderr?
@@ -29,6 +29,11 @@ actor NativeAI {
     func load(_ model: URL, progress: @escaping @Sendable (String) -> Void) async throws {
         guard !busy else { throw FridgeError.message("AIは処理中です。") }
         busy = true; defer { busy = false }
+        if let chat {
+            try await chat.resetConversation(); turns = 0
+            note("conversation renewed; existing engine retained")
+            progress("準備完了"); return
+        }
         cancellation.set(nil); chat = nil; turns = 0; capture?.restore(); capture = nil; try? journal?.close()
         let folder = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("NativeAI/\(UUID().uuidString)")
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
@@ -38,7 +43,7 @@ actor NativeAI {
             progress("保存済みモデルを照合中"); note("checksum")
             guard try ReferenceProbe.sha256(model) == ReferenceProbe.modelSHA256 else { throw FridgeError.message("保存モデルの照合に失敗しました。ログを確認してください。") }
             progress("公開ライブラリを起動中"); note("LiteRTChat init, including upstream Hi warmup")
-            let next = try await VerifiedGemma.make(model)
+            let next = try await VerifiedGemma.makeRenewable(model)
             cancellation.set(next)
             let url = Bundle.main.url(forResource:"apple",withExtension:"png",subdirectory:"Probe")!
             progress("リンゴ画像を検査中"); note("apple")
@@ -56,15 +61,20 @@ actor NativeAI {
     }
     func run(_ prompt: String, image: Data? = nil) async throws -> String {
         guard !busy, let chat else { throw FridgeError.message("設定でAIを起動してください。") }
-        // The public API retains history. Do not silently accumulate unbounded
-        // camera frames or pretend we have an independent conversation reset.
-        guard turns < 6 else { throw FridgeError.message("この会話は6回読み取り済みです。設定でAIを再起動してください。") }
         busy = true; defer { busy = false }; turns += 1
         note("request \(turns), image=\(image != nil)")
-        do { let result = try await stream(chat,prompt,image:image); note("response \(result)"); return result }
-        catch { note("ERROR \(error.localizedDescription)"); cancellation.set(nil); self.chat = nil; throw error }
+        do {
+            try await chat.resetConversation()
+            note("fresh conversation \(turns)")
+            let result = try await stream(chat,prompt,image:image); note("response \(result)"); return result
+        }
+        catch {
+            // Keep the engine. The next explicit request creates a new conversation;
+            // rebuilding the entire model after a context error failed on iPhone.
+            note("ERROR \(error.localizedDescription)"); throw error
+        }
     }
-    private func stream(_ current: LiteRTChat, _ prompt: String, image: Data?) async throws -> String {
+    private func stream(_ current: FridgeChat, _ prompt: String, image: Data?) async throws -> String {
         let revision = cancellation.cancellationRevision
         let holder = NativeChatCancellation(); holder.set(current)
         let timer = DispatchWorkItem { holder.cancel() }

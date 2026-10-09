@@ -14,7 +14,6 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     @Published var camera: NativeCamera?
     @Published var cameraRunning = false
     @Published var paused = false
-    @Published var automaticAI = false
     @Published var scanMessage = "商品と期限を順番に映してください。"
     @Published var candidate: Food?
     @Published var pending: Food?
@@ -28,6 +27,8 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     @Published var alert: String?
     @Published var lastAnswer = ""
     @Published var lastSeconds = 0.0
+    @Published var marks: [ScanMark] = []
+    @Published var detectedDate: String?
     let ai = NativeAI(), models = ModelStore()
     private var loop: Task<Void,Never>?, registration: Task<Void,Never>?
     private var generation = UUID(), lockedKey: String?, dateVote: PrintedDate?, lastStamp = 0.0, foodVote: String?
@@ -63,6 +64,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func resetScan() {
         generation = UUID(); productLookup?.cancel(); productLookup = nil; registration?.cancel(); registration = nil
         pending = nil; candidate = nil; countdown = 0; lockedKey = nil; dateVote = nil; foodVote = nil; lastStamp = 0; needsReview = false
+        marks = []; detectedDate = nil; lastAnswer = ""; lastSeconds = 0
     }
     func pauseScan() { paused.toggle(); generation = UUID(); registration?.cancel(); pending = nil; countdown = 0; dateVote = nil; foodVote = nil; productLookup?.cancel(); scanMessage = paused ? "一時停止中":"読み取りを再開しました。" }
     func registrationForReview() { registration?.cancel(); pending = nil; countdown = 0; paused = true; generation = UUID(); dateVote = nil; foodVote = nil; productLookup?.cancel() }
@@ -81,11 +83,9 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
             loop = Task { [weak self, weak store] in
                 while !Task.isCancelled {
                     guard let self, let store, self.cameraRunning else { return }
-                    if !self.paused {
-                        if self.candidate?.barcode != nil { await self.readPrinted(store:store) }
-                        else if self.automaticAI, self.aiReady, !self.aiBusy, self.pending == nil, self.lockedKey == nil { await self.recognize(store:store) }
-                    }
-                    try? await Task.sleep(nanoseconds:UInt64(store.state.settings.interval)*1_000_000)
+                    self.marks.removeAll { Date().timeIntervalSince($0.seenAt) > 1.2 }
+                    if !self.paused, !self.aiBusy { await self.readPrinted(store:store) }
+                    try? await Task.sleep(nanoseconds:500_000_000)
                 }
             }
         } catch { if camera === value { camera = nil; scanMessage = error.localizedDescription } }
@@ -98,17 +98,22 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func background() async { cancelAI(); await stopCamera() }
     func key(_ value: Food) -> String { value.barcode ?? FoodRules.canonical(value.name) }
     func codes(_ codes: [[String:String]], store: HouseholdStore) {
-        guard cameraRunning, !paused, !demo else { return }
+        guard cameraRunning, !paused, !demo, !aiBusy else { return }
+        marks.removeAll { !$0.isDate }
+        marks.append(contentsOf:codes.compactMap(ScanMark.barcode))
         let observations = codes.compactMap { NativeReading.barcode($0["text"] ?? "") }
-        guard Set(observations.map(\.code)).count <= 1 else { resetScan(); scanMessage = "商品を1種類ずつ映してください。"; return }
+        guard Set(observations.map(\.code)).count <= 1 else { scanMessage = "商品を1種類ずつ映してください。"; return }
         guard let observed = observations.first else { return }
         if lockedKey == observed.code || candidate?.barcode == observed.code { return }
+        // Once selected, expiry OCR belongs to this item until the user chooses
+        // Next/Cancel. A barcode on a nearby package must not replace it.
+        guard candidate == nil else { return }
         registration?.cancel(); countdown = 0; pending = nil; dateVote = nil; foodVote = nil; generation = UUID()
         var food = Food(); food.barcode = observed.code; food.source = "camera"; food.location = location
         food.name = store.state.productCache[observed.code]?.name ?? ""
         if let entry = store.state.productCache[observed.code] { food.unit = entry.unit; food.kind = entry.kind }
         if let expiry = observed.expiry { food.expiryType = expiry.type; food.expiryDate = expiry.date }
-        candidate = food; needsReview = food.name.isEmpty
+        candidate = food; needsReview = true
         scanMessage = food.name.isEmpty ? "コードを読み取りました。商品名を確認してください。":"\(food.name)：同じ商品の期限を映してください。"
         beep(store)
         if scanMode == "consume", !food.name.isEmpty { stage(food,store:store) }
@@ -125,29 +130,41 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
                           let object = try JSONSerialization.jsonObject(with:data) as? [String:Any], let product = object["product"] as? [String:Any] else { return }
                     let name = FoodRules.clean(product["product_name_ja"] as? String ?? product["product_name"] as? String ?? "")
                     guard !Task.isCancelled, let self, let store, self.generation == token, self.cameraRunning, !self.paused, self.candidate?.barcode == observed.code, !name.isEmpty else { return }
-                    self.candidate?.name = name; self.needsReview = false; self.scanMessage = "\(name)：同じ商品の期限を映してください。"
+                    self.candidate?.name = name; self.needsReview = true; self.scanMessage = "\(name)：同じ商品の期限を映してください。"
                     if let food = self.candidate, self.scanMode == "consume" || food.expiryDate != nil { self.stage(food,store:store) }
                 } catch { /* Unknown products remain editable; no inferred expiry. */ }
             }
         }
     }
     func readPrinted(store: HouseholdStore) async {
-        guard let camera, let current = candidate, current.barcode != nil, pending == nil, lockedKey != key(current), !paused else { return }
+        guard let camera, !paused, !aiBusy else { return }
         let token = generation
         do {
             let frame = try await camera.readText()
             guard token == generation, cameraRunning, !paused, let stamp = frame["capturedAt"] as? Double, stamp > lastStamp else { return }
-            lastStamp = stamp
-            guard let date = NativeReading.printed(frame["lines"] as? [[String:Any]] ?? []) else { dateVote = nil; return }
-            guard dateVote == date else { dateVote = date; scanMessage = "日付を確認中。もう少しそのままで。"; return }
-            guard var food = candidate, food.barcode == current.barcode else { return }
-            food.expiryDate = date.date; food.expiryType = date.type; candidate = food
-            if date.type == "unknown" || food.name.isEmpty { needsReview = true; scanMessage = "\(date.date)：商品名と期限の種類を確認してください。" }
-            else { stage(food,store:store) }
-        } catch { /* Wait for the next HD frame; AI failure does not stop OCR. */ }
+            acceptPrinted(frame["lines"] as? [[String:Any]] ?? [],stamp:stamp)
+        } catch {
+            if token == generation, candidate?.barcode != nil { scanMessage = "印字を探しています。期限に近づけ、画面をタップしてピントを合わせてください。" }
+        }
+    }
+    func acceptPrinted(_ lines: [[String:Any]], stamp: Double) {
+        guard stamp > lastStamp, !paused else { return }; lastStamp = stamp
+        marks.removeAll { $0.isDate }; marks.append(contentsOf:ScanMark.dates(lines))
+        guard let date = NativeReading.printed(lines) else { dateVote = nil; detectedDate = nil; return }
+        detectedDate = date.date
+        guard var food = candidate, food.barcode != nil || food.kind == "packaged" else {
+            scanMessage = "日付 \(date.date) を検出。先に商品のバーコードを映してください。"; dateVote = nil; return
+        }
+        guard dateVote?.date == date.date, dateVote?.type == date.type else {
+            dateVote = date; scanMessage = "\(date.date) を確認中。もう少しそのままで。"; return
+        }
+        food.expiryDate = date.date; food.expiryType = date.type; candidate = food
+        needsReview = true
+        scanMessage = date.type == "unknown" ? "日付を読み取りました。候補をタップして賞味・消費を確認してください。":"期限を読み取りました。候補を確認して登録できます。"
     }
     func recognize(store: HouseholdStore, photo: Data? = nil) async {
         guard aiReady, !aiBusy, !loading, !paused else { return }
+        resetScan(); scanMessage = "いまの画像を読み取り中…"
         let token = generation; aiBusy = true; defer { aiBusy = false }
         do {
             let image = try photo ?? camera?.image()
@@ -160,34 +177,28 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
             if food.kind == "produce" { food.expiryType = "estimate"; food.expiryDate = FoodRules.plan(food.name,freshness:food.freshness,overrides:store.state.settings.shelfDays) }
             candidate = food
             if food.quantity == 0 { needsReview = true; scanMessage = "\(food.name)：数量を確認してください。"; return }
-            if photo != nil || !automaticAI { needsReview = true; scanMessage = "\(food.name) \(food.quantity.formatted())\(food.unit)：候補を確認してください。"; return }
-            let vote = "\(key(food)):\(food.quantity)"
-            guard foodVote == vote else { foodVote = vote; scanMessage = "\(food.name)：もう一度確認します。"; return }
-            if food.kind == "packaged", scanMode == "add" { needsReview = true; scanMessage = "商品名と期限を確認してください。" }
-            else { stage(food,store:store) }
-        } catch { scanMessage = error.localizedDescription; automaticAI = false; aiReady = await ai.isReady() }
+            needsReview = true; scanMessage = "\(food.name) \(food.quantity.formatted())\(food.unit)：候補を確認してください。"
+        } catch {
+            guard token == generation else { return }
+            scanMessage = "読み取れませんでした。もう一度撮影できます。\n\(error.localizedDescription)"; aiReady = await ai.isReady()
+        }
     }
     func stage(_ food: Food, store: HouseholdStore) {
         guard pending == nil, lockedKey != key(food), !paused else { return }
-        pending = food; needsReview = false; countdown = 5; beep(store)
-        let token = generation
-        registration = Task { [weak self, weak store] in
-            for value in (1...5).reversed() {
-                guard !Task.isCancelled, let self, token == self.generation, !self.paused else { return }
-                self.countdown = value; try? await Task.sleep(nanoseconds:1_000_000_000)
-            }
-            guard !Task.isCancelled, let self, let store, token == self.generation else { return }
-            self.commit(food,store:store)
-        }
+        candidate = food; pending = food; needsReview = true; countdown = 0
+        scanMessage = "候補を確認して\(scanMode == "consume" ? "消費":"登録")してください。"; beep(store)
     }
     func commit(_ food: Food, store: HouseholdStore) {
+        do { try confirm(food,store:store) }
+        catch { needsReview = true; scanMessage = error.localizedDescription }
+    }
+    func confirm(_ food: Food, store: HouseholdStore) throws {
+        guard lockedKey != key(food) else { return }
         registration?.cancel(); pending = nil; countdown = 0
-        do {
             if demo { scanMessage = "デモ：登録しました（在庫には保存しません）。" }
             else if scanMode == "consume" { try store.consume(candidate:food); scanMessage = "\(food.name)を消費しました。" }
             else { try store.put(food); scanMessage = "\(food.name)を登録しました。" }
-            lockedKey = key(food); candidate = nil; needsReview = false; beep(store)
-        } catch { needsReview = true; scanMessage = error.localizedDescription }
+            lockedKey = key(food); candidate = nil; needsReview = false; dateVote = nil; detectedDate = nil; generation = UUID(); productLookup?.cancel(); beep(store)
     }
     func cancelCandidate() { registration?.cancel(); pending = nil; countdown = 0; if let candidate { lockedKey = key(candidate) }; candidate = nil; dateVote = nil; needsReview = false; scanMessage = "候補を取り消しました。" }
     func beep(_ store: HouseholdStore) { if store.state.settings.sound { AudioServicesPlaySystemSound(1104) } }

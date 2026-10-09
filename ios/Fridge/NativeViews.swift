@@ -104,6 +104,7 @@ struct FoodEditor: View {
                     if let barcode = food.barcode { Text("商品コード：\(barcode)").font(.caption).textSelection(.enabled) }
                 }
                 Section("期限") {
+                    if food.expiryType == "unknown", let date = food.expiryDate { Text("読み取った日付：\(date)。賞味・消費期限を選んでください。") }
                     Picker("期限の種類",selection:$food.expiryType) { Text("期限未設定").tag("unknown"); Text("賞味期限").tag("best_before"); Text("消費期限").tag("use_by"); Text("使い切り目安").tag("estimate") }
                         .onChange(of:food.expiryType) { _, type in if type == "unknown" { food.expiryDate = nil } else if food.expiryDate == nil { food.expiryDate = FoodRules.today } }
                     if food.expiryType != "unknown" { DatePicker("日付",selection:date,displayedComponents:.date).environment(\.timeZone,TimeZone(secondsFromGMT:0)!) }
@@ -180,97 +181,6 @@ struct StapleEditor: View {
     }
 }
 
-struct NativeScanView: View {
-    @EnvironmentObject private var model: NativeAppModel
-    @EnvironmentObject private var store: HouseholdStore
-    @State private var editing: Food?
-    @State private var selectedPhoto: PhotosPickerItem?
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment:.leading,spacing:18) {
-                    HStack { Text("見せるだけで、記録。").font(.title2.bold()); Spacer(); Button("手入力") { model.nextFood(); model.registrationForReview(); var food = Food(); food.location = model.location; editing = food } }
-                    Picker("操作",selection:$model.scanMode) { Text("登録").tag("add"); Text("消費").tag("consume") }.pickerStyle(.segmented).onChange(of:model.scanMode) { _, _ in model.nextFood() }
-                    Picker("保存場所",selection:$model.location) { Text("冷蔵").tag("fridge"); Text("冷凍").tag("freezer"); Text("常温").tag("pantry") }.onChange(of:model.location) { _, _ in model.nextFood() }
-                    if model.demo { Label("操作デモ：在庫には保存しません",systemImage:"info.circle").foregroundStyle(.orange) }
-                    if let camera = model.camera {
-                        NativeCameraPreview(camera:camera).frame(height:380).clipShape(RoundedRectangle(cornerRadius:24))
-                        HStack {
-                            Button(model.paused ? "再開":"一時停止") { model.pauseScan() }.buttonStyle(.bordered)
-                            Button("中央にピント") { Task { try? await camera.focus(at:CGPoint(x:0.5,y:0.5)) } }.buttonStyle(.bordered)
-                            Button("終了") { Task { await model.stopCamera() } }.buttonStyle(.bordered)
-                        }
-                    } else {
-                        VStack(spacing:16) { Image(systemName:"viewfinder").font(.system(size:54)); Text("商品と期限を、順番に。").font(.headline); Text("野菜は1種類ずつ映してください。"); Button("カメラをはじめる") { Task { await model.startCamera(store:store) } }.buttonStyle(.borderedProminent).disabled(model.loading) }.frame(maxWidth:.infinity).padding(.vertical,48).background(fridgeGreen.opacity(0.09),in:RoundedRectangle(cornerRadius:24))
-                    }
-                    Text(model.scanMessage).font(.headline).textSelection(.enabled).accessibilityIdentifier("scanStatus")
-                    if model.aiBusy { ProgressView("食品を読み取り中…"); Button("AIの読み取りを中止") { model.ai.cancellation.cancel(); model.resetScan() } }
-                    HStack {
-                        Button("野菜を読み取る") { Task { await model.recognize(store:store) } }.buttonStyle(.borderedProminent).disabled(!model.cameraRunning || !model.aiReady || model.aiBusy || model.paused)
-                        PhotosPicker(selection:$selectedPhoto,matching:.images) { Label("写真から",systemImage:"photo") }.disabled(!model.aiReady || model.aiBusy || model.paused)
-                    }
-                    if !model.aiReady { Text("野菜のAI認識は設定で準備できます。バーコードと印字の認識には追加AIは不要です。").font(.caption) }
-                    if model.aiReady { Toggle("野菜を続けて自動認識",isOn:$model.automaticAI) }
-                    if let food = model.pending ?? model.candidate {
-                        VStack(alignment:.leading,spacing:12) {
-                            Text(food.name.isEmpty ? "未登録の商品":food.name).font(.title3.bold())
-                            if let barcode = food.barcode { Text(barcode).font(.caption).textSelection(.enabled) }
-                            Text("\(food.quantity > 0 ? food.quantity.formatted():"数量未確認") \(food.unit) · \(food.expiryDate ?? "期限未確認")")
-                            if model.countdown > 0 { Text("\(model.countdown)秒後に\(model.scanMode == "consume" ? "消費":"登録")").font(.headline).monospacedDigit() }
-                            HStack {
-                                Button("確認・編集") { model.registrationForReview(); editing = food }.buttonStyle(.borderedProminent)
-                                Button("取消") { model.cancelCandidate() }.buttonStyle(.bordered)
-                            }
-                        }.padding().frame(maxWidth:.infinity,alignment:.leading).background(.white,in:RoundedRectangle(cornerRadius:16))
-                    }
-                    Button("次の食品・次の1個") { model.nextFood() }.buttonStyle(.bordered)
-                    DisclosureGroup("読み取りの詳細") { Text(String(format:"AI処理 %.2f秒",model.lastSeconds)); Text(model.lastAnswer).font(.caption).textSelection(.enabled) }
-                    DisclosureGroup("カメラなしで操作デモ") {
-                        Button("トマトを映す") { Task { await model.stopCamera(); model.demoFood(store:store) } }
-                        Button("牛乳と期限を映す") { Task { await model.stopCamera(); model.demoFood(store:store,withDate:true) } }
-                    }
-                }.padding(20)
-            }.background(fridgeBackground).navigationTitle("スキャン").navigationBarTitleDisplayMode(.inline)
-                .onAppear { if model.camera == nil { model.location = store.state.settings.location } }
-                .sheet(item:$editing,onDismiss:{model.paused = false}) { food in FoodEditor(food:food) { next in
-                    if model.demo { model.commit(next,store:store) }
-                    else if model.scanMode == "consume" { try store.consume(candidate:next); model.cancelCandidate(); model.scanMessage = "消費しました。" }
-                    else { try store.put(next); model.cancelCandidate(); model.scanMessage = "登録しました。" }
-                } }
-                .onChange(of:selectedPhoto) { _, item in Task {
-                    guard let item else { return }; await model.stopCamera()
-                    do {
-                        guard let data = try await item.loadTransferable(type:Data.self), data.count <= 35*1024*1024, let image = UIImage(data:data) else { throw FridgeError.message("35MB以下の写真を選んでください。") }
-                        let format = UIGraphicsImageRendererFormat(); format.scale = 1
-                        let jpeg = UIGraphicsImageRenderer(size:CGSize(width:384,height:384),format:format).image { _ in image.draw(in:CGRect(x:0,y:0,width:384,height:384)) }.jpegData(compressionQuality:0.85)!
-                        await model.recognize(store:store,photo:jpeg)
-                    } catch { model.alert = error.localizedDescription }; selectedPhoto = nil
-                } }
-        }
-    }
-}
-
-struct NativeCameraPreview: UIViewRepresentable {
-    let camera: NativeCamera
-    func makeUIView(context: Context) -> NativePreviewSurface { NativePreviewSurface(camera:camera) }
-    func updateUIView(_ view: NativePreviewSurface, context: Context) { view.setNeedsLayout() }
-}
-final class NativePreviewSurface: UIView {
-    private let camera: NativeCamera, video: AVCaptureVideoPreviewLayer
-    init(camera: NativeCamera) {
-        self.camera = camera; video = camera.makePreviewLayer(); super.init(frame:.zero); layer.addSublayer(video)
-        addGestureRecognizer(UITapGestureRecognizer(target:self,action:#selector(focus(_:))))
-        isAccessibilityElement = true; accessibilityLabel = "カメラ映像。タップしてピントを合わせます。"
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
-    override func layoutSubviews() {
-        super.layoutSubviews(); CATransaction.begin(); CATransaction.setDisableActions(true); video.frame = bounds; CATransaction.commit()
-        if let connection = video.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
-        if bounds.width > 0, bounds.height > 0 { camera.updateVisibleRegion(video.metadataOutputRectConverted(fromLayerRect:bounds)) }
-    }
-    @objc private func focus(_ gesture: UITapGestureRecognizer) { let point = video.captureDevicePointConverted(fromLayerPoint:gesture.location(in:self)); Task { try? await camera.focus(at:point) } }
-}
-
 struct RecipesView: View {
     @EnvironmentObject private var model: NativeAppModel
     @EnvironmentObject private var store: HouseholdStore
@@ -334,7 +244,7 @@ struct NativeSettingsView: View {
                     Button(model.modelSaved ? "保存したモデルで起動":"モデルを保存して起動") { Task { await model.loadAI() } }.disabled(model.loading || model.aiBusy).accessibilityIdentifier("loadAI")
                     Button("モデルをファイルから") { modelImport = true }.disabled(model.loading || model.aiBusy)
                     Button("メモリを解放") { Task { await model.unloadAI() } }.disabled(!model.aiReady || model.loading || model.aiBusy)
-                    Text("公開APIの会話履歴を保持します。検証中のため6回の読み取り・献立生成ごとにAIを起動し直してください。失敗時の記録は「ファイル」内のFridge → NativeAIに残ります。").font(.caption)
+                    Text("食品・献立ごとに会話を新しくし、前の画像や回答を引き継ぎません。起動したモデルは保持します。失敗時の記録は「ファイル」内のFridge → NativeAIに残ります。").font(.caption)
                     Button("最新のAIログを準備") {
                         do {
                             let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("NativeAI")

@@ -154,7 +154,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         } }
     }
     deinit { NotificationCenter.default.removeObserver(self) }
-    func image() throws -> Data { lock.lock(); defer { lock.unlock() }; guard let latest else { throw FridgeError.message("カメラ映像を待っています。食品を枠に映してください。") }; return latest }
+    func image() throws -> Data { lock.lock(); defer { lock.unlock() }; guard let latest, Date().timeIntervalSince1970 - latestCapturedAt < 1.5 else { throw FridgeError.message("最新のカメラ映像を待っています。食品を枠に映してください。") }; return latest }
 
     private func textSnapshot() throws -> (CVPixelBuffer, CGRect, TimeInterval) {
         lock.lock(); defer { lock.unlock() }
@@ -172,7 +172,20 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                 defer { self.lock.lock(); self.textInFlight = false; self.lock.unlock() }
                 do {
                     let lines = try autoreleasepool { try CameraTextReader.recognize(CIImage(cvPixelBuffer: pixels), region: region) }
-                    promise.resume(returning: ["lines": lines, "capturedAt": capturedAt * 1000])
+                    self.queue.async {
+                        let mapped = lines.map { row -> [String:Any] in
+                            var row = row
+                            if let x = row["x"] as? Double, let y = row["y"] as? Double,
+                               let w = row["width"] as? Double, let h = row["height"] as? Double,
+                               let video = self.videoOutput {
+                                let r = video.metadataOutputRectConverted(fromOutputRect:CGRect(x:x,y:1-y-h,width:w,height:h))
+                                row["metadataX"] = Double(r.minX); row["metadataY"] = Double(r.minY)
+                                row["metadataWidth"] = Double(r.width); row["metadataHeight"] = Double(r.height)
+                            }
+                            return row
+                        }
+                        promise.resume(returning: ["lines": mapped, "capturedAt": capturedAt * 1000])
+                    }
                 } catch { promise.resume(throwing: error) }
             }
         }
@@ -181,14 +194,17 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private func emitCodes(_ codes: [[String: String]], at now: TimeInterval) {
         guard !codes.isEmpty else { return }
         let values = codes.compactMap { $0["text"] }.sorted()
-        guard values != lastCodes || now - lastCodeEvent >= 0.75 else { return }
+        guard values != lastCodes || now - lastCodeEvent >= 0.2 else { return }
         lastCodes = values; lastCodeEvent = now; onCodes?(codes)
     }
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
         guard session.isRunning, regionConfigured else { return }
         let codes = objects.compactMap { object -> [String: String]? in
             guard let code = object as? AVMetadataMachineReadableCodeObject, let value = code.stringValue else { return nil }
-            return ["text": value, "format": code.type.rawValue]
+            let b = code.bounds
+            return ["text": value, "format": code.type.rawValue,
+                    "x":String(Double(b.minX)),"y":String(Double(b.minY)),
+                    "width":String(Double(b.width)),"height":String(Double(b.height))]
         }
         guard !codes.isEmpty else { return }
         let now = Date().timeIntervalSince1970; lastMetadata = now; emitCodes(codes, at: now)
@@ -205,7 +221,19 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             // and the small AI crop. Native metadata is the fast primary path.
             if regionConfigured, now - lastMetadata >= 1, now - lastFallback >= 1 {
                 lastFallback = now
-                if let codes = try? CameraBarcodeReader.detect(image, region: barcodeRegion) { emitCodes(codes, at: now) }
+                if let codes = try? CameraBarcodeReader.detect(image, region: barcodeRegion) {
+                    let mapped = codes.map { row -> [String:String] in
+                        var row = row
+                        if let x = Double(row["x"] ?? ""), let y = Double(row["y"] ?? ""),
+                           let w = Double(row["width"] ?? ""), let h = Double(row["height"] ?? ""), let video = self.videoOutput {
+                            let r = video.metadataOutputRectConverted(fromOutputRect:CGRect(x:x,y:1-y-h,width:w,height:h))
+                            row["x"] = String(Double(r.minX)); row["y"] = String(Double(r.minY))
+                            row["width"] = String(Double(r.width)); row["height"] = String(Double(r.height))
+                        }
+                        return row
+                    }
+                    emitCodes(mapped, at: now)
+                }
             }
             guard let input = CameraImageProcessor.aiJPEG(image, context: context) else { return }
             lock.lock(); latest = input; lock.unlock()
@@ -261,7 +289,10 @@ enum CameraBarcodeReader {
         try VNImageRequestHandler(ciImage: image, orientation: .up).perform([request])
         return (request.results ?? []).compactMap { code in
             guard let value = code.payloadStringValue else { return nil }
-            return ["text": value, "format": code.symbology.rawValue]
+            let b = code.boundingBox
+            return ["text": value, "format": code.symbology.rawValue,
+                    "x":String(Double(b.minX)),"y":String(Double(b.minY)),
+                    "width":String(Double(b.width)),"height":String(Double(b.height))]
         }
     }
 }
