@@ -54,6 +54,7 @@ struct NativeScanView: View {
         }
         .onAppear {
             if model.camera == nil { model.location = store.state.settings.location }
+            if model.capturedImage == nil, !model.demo { Task { await model.startCamera(store:store) } }
         }
         .sheet(item:$editing,onDismiss:{ model.paused = false }) { food in
             FoodEditor(food:food) { next in try model.confirm(next,store:store) }
@@ -75,8 +76,11 @@ struct NativeScanView: View {
                         Text("印字の読み取り").font(.headline)
                         Text(model.printedDetail).font(.callout).textSelection(.enabled)
                         Text(String(format:"直前のAI処理 %.2f秒",model.lastSeconds))
+                        Text("生出力（加工前）").font(.headline)
                         Text(model.lastAnswer).font(.callout).textSelection(.enabled)
-                        Text("緑の枠はバーコード、黄色の枠は期限に関係する文字です。食品のAI認識には表示中の映像全体を使います。期限モードでは黄色い枠の中を読み取ります。映像をタップするとピントが合います。候補は確認して保存するまで在庫に入りません。")
+                        Text("判定・エラーの理由").font(.headline)
+                        Text(model.scanDebug).textSelection(.enabled)
+                        Text("白枠の中を食品AIで読み取ります。期限モードでは黄色い枠の中を読み取ります。映像をタップするとピントが合います。写真を開いた場合は、その写真からも期限を読めます。確認して保存するまで在庫には入りません。")
                     }.padding()
                 }.navigationTitle("読み取りの詳細").toolbar { ToolbarItem(placement:.confirmationAction) { Button("閉じる") { details = false } } }
             }
@@ -86,11 +90,11 @@ struct NativeScanView: View {
             do {
                 guard let data = try await item.loadTransferable(type:Data.self), data.count <= 35*1024*1024, let image = UIImage(data:data) else { throw FridgeError.message("35MB以下の写真を選んでください。") }
                 // Preserve aspect ratio; squashing portrait photos changes food shapes.
-                let scale = min(1,1024 / max(image.size.width,image.size.height))
+                let scale = min(1,2048 / max(image.size.width,image.size.height))
                 let size = CGSize(width:image.size.width*scale,height:image.size.height*scale)
                 let format = UIGraphicsImageRendererFormat(); format.scale = 1
                 let jpeg = UIGraphicsImageRenderer(size:size,format:format).image { _ in image.draw(in:CGRect(origin:.zero,size:size)) }.jpegData(compressionQuality:0.85)!
-                await model.recognize(store:store,photo:jpeg)
+                await model.usePhoto(jpeg,store:store)
             } catch { model.alert = error.localizedDescription }; selectedPhoto = nil
         } }
     }
@@ -152,13 +156,16 @@ struct NativeScanView: View {
             if model.expiryMode {
                 if model.aiBusy {
                     Button("AI読み取りを中止") { model.cancelAI(); model.scanMessage = "中止しています…" }.frame(minHeight:44)
-                } else if model.capturedImage != nil {
-                    Button("期限を撮り直す") { model.beginExpiry() }.frame(minHeight:44)
                 } else {
-                    Button { Task { await model.recognizeExpiry() } } label: {
-                        Label(model.aiReady ? "AIで期限を読む":"期限AIは設定で準備",systemImage:"sparkles").frame(maxWidth:.infinity,minHeight:48)
-                    }.background(.white,in:Capsule()).foregroundStyle(.black)
-                        .disabled(!model.aiReady || !model.cameraRunning || model.paused).accessibilityIdentifier("aiExpiryShutter")
+                    HStack {
+                        Button { Task { await model.readExpiryStill() } } label: {
+                            Label(model.expiryPhotoData == nil ? "撮影して文字読取":"写真を文字読取",systemImage:"text.viewfinder").frame(maxWidth:.infinity,minHeight:48)
+                        }.accessibilityIdentifier("stillOCR")
+                        Button { Task { await model.recognizeExpiry() } } label: {
+                            Label(model.aiReady ? "AIで期限を読む":model.loading ? "AI起動中…":"AIは設定で準備",systemImage:"sparkles").frame(maxWidth:.infinity,minHeight:48)
+                        }.disabled(!model.aiReady || model.paused).accessibilityIdentifier("aiExpiryShutter")
+                    }.font(.subheadline).background(.white.opacity(0.14),in:RoundedRectangle(cornerRadius:16))
+                    if model.capturedImage != nil, model.cameraRunning { Button("期限を撮り直す") { model.beginExpiry() }.frame(minHeight:44) }
                 }
                 HStack {
                     Button("撮影を終える") { model.endExpiry() }.frame(minHeight:44)
@@ -166,12 +173,13 @@ struct NativeScanView: View {
                     Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:44)
                 }.disabled(model.aiBusy).accessibilityIdentifier("expiryModeControls")
             } else if model.capturedImage != nil, !model.aiBusy {
+                if model.candidate == nil { Button("この写真の期限を読み取る") { model.beginExpiry() }.frame(minHeight:44) }
                 Button { model.nextFood(); if model.camera == nil { Task { await model.startCamera(store:store) } } } label: {
                     Label("次を撮影する",systemImage:"camera").font(.headline).frame(maxWidth:.infinity,minHeight:52)
                 }.background(.white.opacity(0.14),in:Capsule()).accessibilityIdentifier("nextCapture")
             } else { HStack(alignment:.center) {
                 PhotosPicker(selection:$selectedPhoto,matching:.images) { Image(systemName:"photo").font(.title2).frame(width:52,height:52).background(.white.opacity(0.14),in:Circle()) }
-                    .accessibilityLabel("写真から読み取る").disabled(!model.aiReady || model.aiBusy || model.paused)
+                    .accessibilityLabel("写真から読み取る").disabled(model.aiBusy || model.paused)
                 Spacer()
                 VStack(spacing:6) {
                     Button {
@@ -191,6 +199,11 @@ struct NativeScanView: View {
                 Button { model.pauseScan() } label: { Image(systemName:model.paused ? "play.fill":"pause.fill").font(.title2).frame(width:52,height:52).background(.white.opacity(0.14),in:Circle()) }
                     .accessibilityLabel(model.paused ? "読み取りを再開":"読み取りを一時停止").disabled(!model.cameraRunning || model.aiBusy)
             } }
+            if !model.aiBusy, !model.lastAnswer.isEmpty || !model.scanDebug.isEmpty {
+                Button { details = true } label: {
+                    Label("生出力・判定理由を見る",systemImage:"text.bubble").font(.subheadline).frame(maxWidth:.infinity,minHeight:44)
+                }.accessibilityIdentifier("rawRecognition")
+            }
             if model.candidate == nil, !model.aiBusy, model.capturedImage == nil, !model.expiryMode {
                 Button("次の食品・次の1個") { model.nextFood() }.font(.subheadline).frame(minHeight:44)
             }
@@ -221,7 +234,7 @@ struct NativeScanView: View {
             if !model.expiryMode, food.kind != "produce" {
                 HStack(spacing:12) {
                     Button { model.beginExpiry() } label: { Label(food.expiryDate == nil ? "期限を読み取る":"期限を再読取",systemImage:"viewfinder").frame(minHeight:44) }
-                        .disabled(!model.cameraRunning && !model.demo).accessibilityIdentifier("readExpiry")
+                        .disabled(!model.cameraRunning && !model.demo && model.capturedImage == nil).accessibilityIdentifier("readExpiry")
                     Spacer(minLength:0)
                     Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:44)
                 }.font(.subheadline)
@@ -309,7 +322,10 @@ final class NativePreviewSurface: UIView {
         video.frame = bounds; overlay.frame = bounds
         if let connection = video.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
         let expiryRect = CGRect(x:bounds.width*0.08,y:bounds.height*0.34,width:bounds.width*0.84,height:bounds.height*0.24)
+        let side = min(bounds.width*0.86,bounds.height*0.55)
+        let foodRect = CGRect(x:(bounds.width-side)/2,y:bounds.height*0.40-side/2,width:side,height:side)
         if bounds.width > 0, bounds.height > 0 { camera.updateVisibleRegion(video.metadataOutputRectConverted(fromLayerRect:expiryMode ? expiryRect:bounds)) }
+        if side > 0 { camera.updateAIRegion(video.metadataOutputRectConverted(fromLayerRect:expiryMode ? expiryRect:foodRect)) }
         overlay.sublayers?.forEach { $0.removeFromSuperlayer() }
         if expiryMode {
             let shade = CAShapeLayer(), path = UIBezierPath(rect:bounds)
@@ -317,6 +333,11 @@ final class NativePreviewSurface: UIView {
             shade.fillRule = .evenOdd; shade.fillColor = UIColor.black.withAlphaComponent(0.55).cgColor; overlay.addSublayer(shade)
             let frame = CAShapeLayer(); frame.path = UIBezierPath(roundedRect:expiryRect,cornerRadius:16).cgPath
             frame.strokeColor = UIColor.systemYellow.cgColor; frame.fillColor = UIColor.clear.cgColor; frame.lineWidth = 2; overlay.addSublayer(frame)
+        }
+        if !expiryMode, side > 0 {
+            let frame = CAShapeLayer(); frame.path = UIBezierPath(roundedRect:foodRect,cornerRadius:24).cgPath
+            frame.strokeColor = UIColor.white.withAlphaComponent(0.8).cgColor; frame.fillColor = UIColor.clear.cgColor
+            frame.lineWidth = 2; overlay.addSublayer(frame)
         }
         for mark in marks where Date().timeIntervalSince(mark.seenAt) < 1.5 {
             var rect = video.layerRectConverted(fromMetadataOutputRect:mark.rect)

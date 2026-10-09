@@ -21,8 +21,12 @@ struct NativeRootView: View {
         }
         .environmentObject(store).environmentObject(model).tint(fridgeGreen)
         .preferredColorScheme(tab == 2 ? .dark:.light)
-        .onChange(of:tab) { _, value in if value != 2 { Task { await model.stopCamera() } } }
-        .onChange(of:scene) { _, value in if value != .active { Task { await model.background() } } }
+        .task { await model.autoStartAI() }
+        .onChange(of:tab) { _, value in Task { if value == 2 { await model.startCamera(store:store) } else { await model.stopCamera() } } }
+        .onChange(of:scene) { _, value in
+            if value == .background { Task { await model.background() } }
+            else if value == .active, tab == 2, model.capturedImage == nil { Task { await model.startCamera(store:store) } }
+        }
         .alert("確認",isPresented:Binding(get:{model.alert != nil},set:{if !$0 { model.alert = nil }})) { Button("OK",role:.cancel) {} } message: { Text(model.alert ?? "") }
     }
 }
@@ -238,7 +242,7 @@ struct NativeSettingsView: View {
                 }
                 Section("野菜の読み取り・献立の準備") {
                     Text("Gemma 4 E2B").font(.headline)
-                    Text("保存済みの約2.6GBモデルを引き継ぎます。公開ライブラリによる起動検査後、同じAIを使って読み取ります。").font(.subheadline)
+                    Text("保存済みの約2.6GBモデルがあれば、アプリを開くとAIを自動で起動します。リンゴ・赤画像の起動検査は省略します。").font(.subheadline)
                     Text(model.status).textSelection(.enabled).accessibilityIdentifier("aiStatus")
                     if !model.aiErrorDetail.isEmpty { DisclosureGroup("エラーの詳細") { Text(model.aiErrorDetail).font(.caption).textSelection(.enabled) } }
                     if model.loading { ProgressView(value:model.progress); Button("ダウンロード・生成を中止") { model.cancelAI() } }

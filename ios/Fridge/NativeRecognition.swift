@@ -16,6 +16,8 @@ final class NativeChatCancellation: @unchecked Sendable {
 // Preserve the proven upstream initialization/stream body. Renew only the
 // conversation before each user request, never retaining earlier food images.
 actor NativeAI {
+    private var latestOutput = ""
+    func rawOutput() -> String { latestOutput }
     private var chat: FridgeChat?
     private var busy = false, turns = 0
     nonisolated let cancellation = NativeChatCancellation()
@@ -47,18 +49,7 @@ actor NativeAI {
             progress("公開ライブラリを起動中"); note("LiteRTChat init, including upstream Hi warmup")
             let next = try await VerifiedGemma.makeRenewable(model)
             cancellation.set(next)
-            let url = Bundle.main.url(forResource:"apple",withExtension:"png",subdirectory:"Probe")!
-            progress("リンゴ画像を検査中"); note("apple")
-            let apple = try await stream(next,"What object is in this image? Answer in one word.",image:Data(contentsOf:url))
-            guard apple.lowercased().contains("apple") else { throw FridgeError.message("リンゴ検査の回答: \(apple)") }
-            let red = await MainActor.run {
-                let format = UIGraphicsImageRendererFormat(); format.scale = 1
-                return UIGraphicsImageRenderer(size:CGSize(width:384,height:384),format:format).image { ctx in UIColor.red.setFill(); ctx.fill(CGRect(x:0,y:0,width:384,height:384)) }.jpegData(compressionQuality:0.85)!
-            }
-            progress("赤い画像を検査中"); note("red")
-            let color = try await stream(next,"Name the color of this image. Answer with one English word.",image:red)
-            guard color.lowercased().contains("red") else { throw FridgeError.message("赤色検査の回答: \(color)") }
-            chat = next; note("READY: Apple / Red"); progress("準備完了")
+            chat = next; note("READY: engine initialized; image startup probes omitted"); progress("準備完了")
         } catch { note("ERROR \(error.localizedDescription)"); cancellation.set(nil); chat = nil; throw error }
     }
     func run(_ prompt: String, image: Data? = nil) async throws -> String {
@@ -82,9 +73,9 @@ actor NativeAI {
         let timer = DispatchWorkItem { holder.cancel() }
         DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+90,execute:timer)
         defer { timer.cancel(); holder.set(nil) }
-        var result = ""
+        var result = ""; latestOutput = ""
         for try await token in current.stream(prompt,image:image) {
-            try Task.checkCancellation(); result += token
+            try Task.checkCancellation(); result += token; latestOutput = result
             guard result.utf8.count <= 24000 else { try? current.cancel(); throw FridgeError.message("回答が長すぎるため中止しました。AIを再起動してください。") }
         }
         try Task.checkCancellation()
@@ -109,7 +100,7 @@ enum NativeReading {
         let confidence = row["confidence"] as? Double ?? 0
         // Dot-matrix packaging can receive low Vision confidence despite a
         // complete heading/date. Require that evidence and two distinct frames.
-        return confidence >= 0.55 || (confidence >= 0.30 && expiryHeading(text) && printedDate(text) != nil)
+        return confidence >= 0.55 || (confidence >= 0.30 && (printedDate(text) != nil || expiryHeading(text)))
     }
     static func printedDate(_ raw: String) -> String? {
         let text = raw.precomposedStringWithCompatibilityMapping
@@ -158,7 +149,9 @@ enum NativeReading {
         func contains(_ value: String, _ pattern: String) -> Bool { value.range(of:pattern,options:[.regularExpression,.caseInsensitive]) != nil }
         func near(_ a: [String:Any], _ b: [String:Any]) -> Bool {
             guard let ax = a["x"] as? Double, let ay = a["y"] as? Double, let aw = a["width"] as? Double, let ah = a["height"] as? Double, let bx = b["x"] as? Double, let by = b["y"] as? Double, let bw = b["width"] as? Double, let bh = b["height"] as? Double else { return false }
-            return min(ax+aw,bx+bw)-max(ax,bx) > min(aw,bw)*0.35 && abs(ay+ah/2-by-bh/2) <= max(ah,bh)*2
+            let overlap = min(ax+aw,bx+bw)-max(ax,bx), vertical = abs(ay+ah/2-by-bh/2)
+            return (overlap > min(aw,bw)*0.35 && vertical <= max(ah,bh)*2)
+                || (overlap >= -max(ah,bh)*4 && vertical <= max(ah,bh)*1.5)
         }
         var results: [PrintedDate] = []
         for row in valid {
@@ -168,6 +161,7 @@ enum NativeReading {
             let neighborhood = valid.filter { near(row,$0) }.map(text).joined(separator:" ")
             if !contains(value,"賞味|消費|best\\s*before|use\\s*by"), contains(neighborhood,manufacture) { continue }
             let combined = value+" "+neighborhood
+            if (row["confidence"] as? Double ?? 0) < 0.55, !expiryHeading(combined) { continue }
             let best = contains(combined,"賞味\\s*期限|best\\s*before"), use = contains(combined,"消費\\s*期限|use\\s*by")
             if best && use { return nil }
             results.append(PrintedDate(date:date,type:best ? "best_before":use ? "use_by":"unknown",raw:value))

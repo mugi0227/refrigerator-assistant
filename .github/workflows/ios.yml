@@ -5,6 +5,10 @@ on:
     paths: ['ios/**', 'public/**', 'scripts/**', '.github/workflows/ios.yml']
   workflow_dispatch:
     inputs:
+      quick_device:
+        description: 'Build and validate IPA for immediate physical-device testing; skip Simulator and model suites'
+        type: boolean
+        default: false
       camera_only:
         description: 'Run camera, OCR, inventory and UI regression tests (AI code unchanged)'
         type: boolean
@@ -24,6 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare optional private label regression fixture
+        if: ${{ !inputs.quick_device }}
         env:
           FRIDGE_PRIVATE_LABEL: ${{ secrets.FRIDGE_OCR_FIXTURE_20261009 }}
         run: |
@@ -37,11 +42,12 @@ jobs:
         id: device
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
       - name: Check native runtime regression tests
-        if: ${{ !cancelled() && steps.device.outcome == 'success' }}
+        if: ${{ !inputs.quick_device && !cancelled() && steps.device.outcome == 'success' }}
         env:
           FRIDGE_CAMERA_ONLY: ${{ inputs.camera_only && '1' || '0' }}
         run: bash scripts/test-ios-runtime.sh 2>&1 | tee runtime-test.log
       - name: Check inventory persistence on iOS Simulator
+        if: ${{ !inputs.quick_device }}
         run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
       - name: Save AltStore IPA
         uses: actions/upload-artifact@v4
@@ -72,7 +78,7 @@ jobs:
             ios/build-simulator/screenshots
           retention-days: 1
       - name: Save compact visual evidence
-        if: always()
+        if: ${{ !inputs.quick_device && always() }}
         uses: actions/upload-artifact@v4
         with:
           name: Fridge-visual-evidence

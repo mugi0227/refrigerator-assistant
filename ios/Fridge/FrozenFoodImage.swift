@@ -11,7 +11,8 @@ struct FrozenFoodImage: View {
             let frame = FoodRegion.imageFrame(image:image.size,canvas:proxy.size)
             ZStack(alignment:.topLeading) {
                 Image(uiImage:image).resizable().scaledToFit()
-                    .frame(width:frame.width,height:frame.height).position(x:frame.midX,y:frame.midY)
+                    .frame(width:frame.width,height:frame.height).clipShape(RoundedRectangle(cornerRadius:24))
+                    .position(x:frame.midX,y:frame.midY)
                     .accessibilityLabel("AIに渡した写真")
                 ForEach(regions) { region in
                     let rect = CGRect(x:frame.minX+region.rect.minX*frame.width,y:frame.minY+region.rect.minY*frame.height,

@@ -24,6 +24,12 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private var videoOutput: AVCaptureVideoDataOutput?
     private var metadataOutput: AVCaptureMetadataOutput?
     private var visibleMetadataRegion = CGRect(x: 0, y: 0, width: 1, height: 1)
+    private var aiMetadataRegion = CGRect(x:0,y:0,width:1,height:1)
+    func updateAIRegion(_ region: CGRect) {
+        let clipped = region.intersection(CGRect(x:0,y:0,width:1,height:1))
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return }
+        queue.async { self.aiMetadataRegion = clipped }
+    }
     private var lastFrame: TimeInterval = 0
     private var lastFallback: TimeInterval = 0
     private var lastMetadata: TimeInterval = 0
@@ -258,7 +264,9 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                     emitCodes(mapped, at: now)
                 }
             }
-            guard let input = CameraImageProcessor.aiJPEG(image, context: context, region:barcodeRegion) else { return }
+            let aiPixels = videoOutput?.outputRectConverted(fromMetadataOutputRect:aiMetadataRegion) ?? .zero
+            let aiRegion = CameraCoordinates.visionRect(fromOutputPixels:aiPixels,size:frameSize)
+            guard let input = CameraImageProcessor.aiJPEG(image, context: context, region:aiRegion) else { return }
             lock.lock(); latest = input; latestImageAt = now; lock.unlock()
             if let onFrame, let thumbnail = CameraImageProcessor.thumbnailJPEG(image, context:context) {
                 onFrame(thumbnail.base64EncodedString(), [])
