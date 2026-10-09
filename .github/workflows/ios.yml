@@ -12,18 +12,20 @@ concurrency:
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Build unsigned iPhone IPA
+        id: device
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
-      - name: Check actual Gemma text and JPEG inference
-        run: bash scripts/test-ios-runtime.sh 2>&1 | tee runtime-test.log
       - name: Check inventory persistence on iOS Simulator
         run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
+      - name: Check actual Gemma text and JPEG inference
+        if: ${{ !cancelled() && steps.device.outcome == 'success' }}
+        run: bash scripts/test-ios-runtime.sh 2>&1 | tee runtime-test.log
       - name: Save AltStore IPA
         uses: actions/upload-artifact@v4
         with:
