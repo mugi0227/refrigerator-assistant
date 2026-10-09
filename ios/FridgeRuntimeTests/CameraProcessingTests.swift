@@ -57,7 +57,9 @@ final class CameraProcessingTests: XCTestCase {
         let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
         attachment.name = "HD printed Japanese expiry"; attachment.lifetime = .keepAlways; add(attachment)
         let image = try XCTUnwrap(CIImage(data: png))
-        let roi = CameraCoordinates.visionRect(fromOutputPixels:CGRect(x:0,y:0,width:1080,height:1920),size:CGSize(width:1080,height:1920))
+        // Aspect-fill removes the left/right margins on a tall iPhone screen.
+        // Treating x=54 pixels as normalized would make this ROI empty.
+        let roi = CameraCoordinates.visionRect(fromOutputPixels:CGRect(x:54,y:0,width:972,height:1920),size:CGSize(width:1080,height:1920))
         let lines = try CameraTextReader.recognize(image,region:roi)
         let text = lines.compactMap { $0["text"] as? String }.joined(separator: " | ")
         XCTAssertTrue(text.contains("賞味期限"), text); XCTAssertTrue(text.contains("2026.10.31"), text)

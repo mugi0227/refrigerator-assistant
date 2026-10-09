@@ -200,7 +200,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                             return row
                         }
                         promise.resume(returning: ["lines": mapped, "capturedAt": capturedAt * 1000,
-                            "region":NSStringFromCGRect(region),"frameSize":NSStringFromCGSize(frameSize)])
+                            "region":String(describing:region),"frameSize":String(describing:frameSize)])
                     }
                 } catch { promise.resume(throwing: error) }
             }
