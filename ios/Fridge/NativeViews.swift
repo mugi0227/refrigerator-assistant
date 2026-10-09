@@ -20,6 +20,7 @@ struct NativeRootView: View {
             NativeSettingsView().tabItem { Label("設定",systemImage:"gearshape") }.tag(4)
         }
         .environmentObject(store).environmentObject(model).tint(fridgeGreen)
+        .preferredColorScheme(tab == 2 ? .dark:.light)
         .onChange(of:tab) { _, value in if value != 2 { Task { await model.stopCamera() } } }
         .onChange(of:scene) { _, value in if value != .active { Task { await model.background() } } }
         .alert("確認",isPresented:Binding(get:{model.alert != nil},set:{if !$0 { model.alert = nil }})) { Button("OK",role:.cancel) {} } message: { Text(model.alert ?? "") }

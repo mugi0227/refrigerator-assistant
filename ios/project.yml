@@ -21,6 +21,8 @@ targets:
       - path: Fridge/Resources/Probe
         type: folder
         buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.md
+        buildPhase: resources
     info:
       path: Fridge/Info.plist
       properties:

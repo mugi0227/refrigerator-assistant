@@ -18,4 +18,5 @@ collect_results() {
 trap collect_results EXIT
 xcodebuild -project ios/Fridge.xcodeproj -scheme Fridge -configuration Debug \
   -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-simulator \
-  -resultBundlePath ios/build-simulator/UI.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test
+  -resultBundlePath ios/build-simulator/UI.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+  -parallel-testing-enabled NO test

@@ -52,10 +52,12 @@ final class FridgeRuntimeTests: XCTestCase {
             _ = try await ai.run(String(repeating:"apple ",count:3000))
             XCTFail("Oversized prompt should exceed the 2048-token context")
         } catch {
-            XCTAssertTrue(error.localizedDescription.lowercased().contains("prefill"),error.localizedDescription)
+            let message = error.localizedDescription.lowercased()
+            XCTAssertTrue(message.contains("prefill") || message.contains("input token ids are too long"),error.localizedDescription)
         }
         let recovered = try await ai.run("Reply exactly BLUE-47, with no other words.")
         XCTAssertTrue(recovered.contains("BLUE-47"),recovered)
+        print("NATIVE_ERROR_RECOVERY: \(recovered)")
         try await ai.unload()
         attachNativeLogs()
     }

@@ -199,8 +199,13 @@ final class NativePreviewSurface: UIView {
             guide.lineWidth = 1.5; guide.lineDashPattern = [9,7]; overlay.addSublayer(guide)
         }
         for mark in marks where Date().timeIntervalSince(mark.seenAt) < 1.5 {
-            let rect = video.layerRectConverted(fromMetadataOutputRect:mark.rect)
+            var rect = video.layerRectConverted(fromMetadataOutputRect:mark.rect)
             guard rect.intersects(bounds) else { continue }
+            // A legacy Vision barcode result can be only one scanline high.
+            // Keep its center/width, but give the detection indicator visible height.
+            if !mark.isDate, rect.height < 24 {
+                rect = CGRect(x:rect.minX,y:rect.midY-12,width:rect.width,height:24)
+            }
             let color: UIColor = mark.isDate ? .systemYellow:.systemGreen
             let outline = CAShapeLayer(); outline.path = UIBezierPath(roundedRect:rect.insetBy(dx:-3,dy:-3),cornerRadius:6).cgPath
             outline.strokeColor = color.cgColor; outline.fillColor = UIColor.clear.cgColor; outline.lineWidth = 3; overlay.addSublayer(outline)
