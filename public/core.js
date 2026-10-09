@@ -29,11 +29,30 @@ export function canonicalName(value) {
   if (['milk', 'ミルク'].includes(lower)) return '牛乳';
   return name;
 }
+// Icons for names people type or packages report. First match wins, so narrower words come first (牛乳 before 牛).
+const ICONS = [
+  [/卵|たまご|タマゴ|egg/i,'🥚'], [/ヨーグルト|yogurt/i,'🥣'], [/チーズ|cheese/i,'🧀'], [/バター|マーガリン|butter/i,'🧈'],
+  [/アイス|ice\s*cream/i,'🍨'], [/プリン|ゼリー/,'🍮'], [/ケーキ|cake/i,'🍰'], [/チョコ/,'🍫'],
+  [/牛乳|豆乳|ミルク|乳飲料|milk/i,'🥛'], [/ジュース|juice/i,'🧃'], [/コーラ|サイダー|炭酸|ソーダ/,'🥤'], [/コーヒー|coffee/i,'☕'],
+  [/茶|tea/i,'🍵'], [/ビール|beer/i,'🍺'], [/ワイン|wine/i,'🍷'], [/日本酒|酒/,'🍶'], [/^水$|ウォーター|water/i,'💧'],
+  [/豆腐|とうふ|tofu/i,'⬜'], [/納豆|なっとう/,'🫘'], [/枝豆|えだまめ|そら豆|えんどう/,'🫛'],
+  [/ベーコン|ハム|bacon|ham/i,'🥓'], [/ソーセージ|ウインナー|ウィンナー|sausage/i,'🌭'], [/鶏|チキン|ささみ|手羽|chicken/i,'🍗'],
+  [/肉|豚|牛|ステーキ|meat|pork|beef/i,'🥩'], [/えび|エビ|海老|shrimp/i,'🦐'], [/^いか|イカ|烏賊|たこ|タコ/,'🦑'], [/あさり|しじみ|貝|牡蠣/,'🦪'],
+  [/刺身|寿司|すし/,'🍣'], [/ちくわ|かまぼこ|はんぺん/,'🍥'], [/魚|鮭|さけ|サーモン|さば|鯖|あじ|鯵|ぶり|鰤|たら|鱈|まぐろ|fish|salmon/i,'🐟'],
+  [/餃子|ぎょうざ|ギョーザ/,'🥟'], [/弁当|惣菜|そうざい/,'🍱'], [/ピザ|pizza/i,'🍕'], [/パスタ|スパゲ/,'🍝'],
+  [/うどん|そば|ラーメン|麺|焼きそば|noodle/i,'🍜'], [/ご飯|ごはん|米|おにぎり|rice/i,'🍚'], [/パン|bread/i,'🍞'],
+  [/白菜|小松菜|水菜|チンゲン|青菜|ほうれん/,'🥬'], [/ねぎ|ネギ|葱|大葉|バジル|パセリ|ハーブ|ニラ|にら/,'🌿'], [/もやし|スプラウト|豆苗/,'🌱'],
+  [/さつまいも|さつま芋/,'🍠'], [/いも|芋/,'🥔'], [/かぼちゃ|南瓜/,'🎃'], [/とうもろこし|コーン|corn/i,'🌽'], [/にんにく|ニンニク|garlic/i,'🧄'],
+  [/しょうが|生姜|ショウガ|ginger/i,'🫚'], [/唐辛子|とうがらし|チリ/,'🌶️'], [/パプリカ/,'🫑'], [/しいたけ|えのき|しめじ|まいたけ|エリンギ/,'🍄'],
+  [/アボカド|avocado/i,'🥑'], [/レモン|lemon/i,'🍋'], [/みかん|オレンジ|orange/i,'🍊'], [/いちご|苺|イチゴ|strawberr/i,'🍓'],
+  [/ぶどう|葡萄|ブドウ|grape/i,'🍇'], [/もも|桃|peach/i,'🍑'], [/メロン|melon/i,'🍈'], [/すいか|スイカ|西瓜/,'🍉'], [/キウイ|kiwi/i,'🥝'],
+  [/パイン|pineapple/i,'🍍'], [/さくらんぼ|チェリー|cherr/i,'🍒'], [/ブルーベリー|blueberr/i,'🫐'], [/梨|pear/i,'🍐'], [/マンゴー|mango/i,'🥭'],
+  [/キムチ|漬物|漬け|ジャム|味噌|みそ|佃煮/,'🫙'], [/マヨ|ケチャップ|ソース|ドレッシング|醤油|しょうゆ|ポン酢|たれ|タレ/,'🧴'], [/冷凍/,'🧊']
+];
 export function emoji(name) {
-  if (PRODUCE[canonicalName(name)]) return PRODUCE[canonicalName(name)].emoji;
-  if (/卵|たまご/.test(name)) return '🥚'; if (/乳|ミルク/.test(name)) return '🥛';
-  if (/肉|鶏|豚|牛/.test(name)) return '🥩'; if (/魚|鮭|さば/.test(name)) return '🐟';
-  if (/豆腐/.test(name)) return '◻️'; if (/パン/.test(name)) return '🍞'; return '🥡';
+  const canonical = canonicalName(name);
+  if (PRODUCE[canonical]) return PRODUCE[canonical].emoji;
+  return ICONS.find(([pattern]) => pattern.test(canonical))?.[1] ?? '🍽️';
 }
 export function today(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;

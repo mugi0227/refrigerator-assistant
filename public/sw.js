@@ -1,4 +1,4 @@
-const CACHE='fridge-shell-v4';
+const CACHE='fridge-shell-v5';
 const SHELL=['./','./index.html','./styles.css','./app.js','./core.js','./db.js','./vision.js','./model-cache.js','./native-bridge.js','./scanner.js','./barcode-worker.js','./icon.svg','./manifest.webmanifest'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('fridge-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});

@@ -5,7 +5,7 @@ final class FridgeUITests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launch()
-        let addFood = app.buttons["＋ 手入力"]
+        let addFood = app.buttons["食品を追加"].firstMatch
         XCTAssertTrue(addFood.waitForExistence(timeout: 20))
         addFood.tap()
         let name = app.textFields["食品名"]
@@ -19,10 +19,12 @@ final class FridgeUITests: XCTestCase {
         done.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         app.buttons["追加する"].tap()
-        XCTAssertTrue(app.staticTexts["ios-persistence-probe"].waitForExistence(timeout: 10), app.debugDescription)
+        // Shelf slots are buttons whose label includes the name, so match any element that carries it.
+        let probe = NSPredicate(format: "label CONTAINS %@", "ios-persistence-probe")
+        XCTAssertTrue(app.descendants(matching: .any).matching(probe).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         app.terminate(); app.launch()
-        XCTAssertTrue(app.staticTexts["ios-persistence-probe"].waitForExistence(timeout: 15))
-        app.buttons["設定を開く"].tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(probe).firstMatch.waitForExistence(timeout: 15))
+        app.buttons["設定"].tap()
         app.buttons["野菜の読み取り・献立の準備（任意）"].tap()
         let native = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "iOSネイティブ")).firstMatch
         XCTAssertTrue(native.waitForExistence(timeout: 5))
