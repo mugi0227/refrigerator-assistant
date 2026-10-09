@@ -69,6 +69,7 @@ final class NativeDomainTests: XCTestCase {
         let json = #"{"種類":"野菜・果物","名前":"にんじん","個数":3,"複数種類":false,"不確か":false,"位置":[{"名前":"にんじん","個数":3,"範囲":[100,200,800,900]}]}"#
         XCTAssertEqual(try NativeReading.observation(json,location:"fridge")?.name,"にんじん")
         XCTAssertEqual(FoodRegion.parse(json).first?.name,"にんじん")
+        XCTAssertEqual(try NativeReading.observation(json.replacingOccurrences(of:"野菜・果物",with:"果物"),location:"fridge")?.kind,"produce")
         XCTAssertEqual(FoodRules.japaneseFoodName("salad"),"サラダ")
         XCTAssertEqual(FoodRules.japaneseFoodName("unrecognized food"),"食品（名前を確認）")
         let good = #"{"読めた":true,"日付":"2027-02-01","印字":"賞味期限 27.02.01 LA","不確か":false}"#
@@ -77,6 +78,12 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertNil(NativeReading.expiryObservation(good.replacingOccurrences(of:"27.02.01",with:"27.02.02")))
         XCTAssertNil(NativeReading.expiryObservation(good.replacingOccurrences(of:"27.02.01",with:"02.01")))
         XCTAssertNil(NativeReading.expiryObservation(good.replacingOccurrences(of:"false",with:"true")))
+        XCTAssertEqual(NativeReading.expiryObservation("賞味期限 27.02.01 LA")?.date,"2027-02-01")
+        XCTAssertEqual(NativeReading.expiryObservation("消費期限 2026/10/12")?.type,"use_by")
+        XCTAssertNil(NativeReading.expiryObservation("2027-02-01"))
+        XCTAssertNil(NativeReading.expiryObservation("読取不可"))
+        XCTAssertNil(NativeReading.expiryObservation("賞味期限 2027.02.01 と推測します"))
+        XCTAssertNil(NativeReading.expiryObservation("賞味期限 2027.02.01 / 2027.02.02"))
     }
     @MainActor func testAIExpiryRequiresSeparateConfirmation() throws {
         let store = HouseholdStore(file:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
