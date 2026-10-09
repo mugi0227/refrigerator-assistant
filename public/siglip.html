@@ -18,13 +18,13 @@
         <p>初回はモデル約95MBと実行環境約14MBを取得します。写真は送信せず、この端末で処理します。</p>
         <div class="trial-status" role="status" aria-live="polite"><strong id="status">保存状況を確認中…</strong><span id="elapsed"></span></div>
         <progress id="progress" max="1" hidden aria-label="モデルの保存状況"></progress>
-        <div class="button-row"><button id="load" class="primary">モデルを保存して起動</button><button id="stop" class="secondary" hidden>中止する</button></div>
+        <div class="button-row"><button id="load" class="primary" disabled>モデルを保存して起動</button><button id="stop" class="secondary" hidden>中止する</button></div>
         <p id="cache-note" class="trial-note"></p>
       </section>
       <section class="settings-card" aria-labelledby="photo-title">
         <h2 id="photo-title">2. 野菜を1種類、選ぶ</h2>
         <div class="trial-photo" id="photo"><div id="placeholder"><span class="trial-leaf" aria-hidden="true">⌗</span><p>まずはトマトや、にんじんから。</p><span>袋を外し、明るい場所で撮ると比べやすくなります。</span></div><canvas id="preview" width="224" height="224" hidden aria-label="判定する写真"></canvas></div>
-        <div class="button-row"><button class="secondary" id="take">写真を撮る</button><button class="secondary" id="choose">写真を選ぶ</button></div>
+        <div class="button-row"><button class="secondary" id="take" disabled>写真を撮る</button><button class="secondary" id="choose" disabled>写真を選ぶ</button></div>
         <input id="camera-file" type="file" accept="image/*" capture="environment" hidden><input id="photo-file" type="file" accept="image/*" hidden>
         <button id="recognize" class="primary trial-full" disabled>この写真を読み取る</button>
         <p class="trial-note">おためし画面では在庫に登録しません。個数・期限・鮮度は判定しません。</p>

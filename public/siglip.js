@@ -90,6 +90,6 @@ window.addEventListener('pagehide',()=>{controller?.abort();worker?.terminate();
 window.addEventListener('pageshow',event=>{if(event.persisted){status('ページに戻りました。モデルを起動し直してください。');cacheStatus();}});
 log(`SigLIP trial 1 / ${MODEL.revision} / ${navigator.userAgent} / isolated=${crossOriginIsolated}`);
 try{const previous=sessionStorage.getItem(marker);if(previous){status(`前回は${previous}の途中でページが閉じられました。ログと状況を共有してください。`);log(`前回中断: ${previous}`);}else status('モデルを起動して、写真を試せます。');}catch{status('モデルを起動して、写真を試せます。');}
-cacheStatus();
+controls();cacheStatus();
 fetch('./siglip-labels.json').then(r=>{if(!r.ok)throw new Error('候補データの取得失敗');return r.json();}).then(data=>$('#vocabulary').textContent=data.labels.filter(x=>x.food).map(x=>x.label).join('・')).catch(error=>log(error.message));
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(error=>log(`オフライン準備: ${error.message}`));
