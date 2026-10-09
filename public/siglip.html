@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f8f2"><meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="icon" href="./icon.svg"><link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css"><link rel="stylesheet" href="./siglip.css">
+  <title>野菜を見分ける実験 · fridge.</title>
+</head>
+<body>
+  <div class="app-shell trial-shell">
+    <header class="topbar"><a class="wordmark" href="./" aria-label="冷蔵庫へ戻る"><span class="brand-icon">f</span>fridge<span class="brand-dot">.</span></a><a class="trial-back" href="./">冷蔵庫へ戻る</a></header>
+    <main class="trial-main">
+      <div class="section-heading"><div><span class="eyebrow">SMALL MODEL / PWA EXPERIMENT</span><h1>この野菜、なに？</h1></div><span class="date-chip">おためし</span></div>
+      <p class="trial-intro">野菜や果物を1種類ずつ、画面いっぱいに。<br>写真から近い候補を3つ探します。</p>
+      <section class="settings-card" aria-labelledby="prepare-title">
+        <h2 id="prepare-title">1. 読み取りの準備</h2>
+        <p>初回はモデル約95MBと実行環境約14MBを取得します。写真は送信せず、この端末で処理します。</p>
+        <div class="trial-status" role="status" aria-live="polite"><strong id="status">保存状況を確認中…</strong><span id="elapsed"></span></div>
+        <progress id="progress" max="1" hidden aria-label="モデルの保存状況"></progress>
+        <div class="button-row"><button id="load" class="primary">モデルを保存して起動</button><button id="stop" class="secondary" hidden>中止する</button></div>
+        <p id="cache-note" class="trial-note"></p>
+      </section>
+      <section class="settings-card" aria-labelledby="photo-title">
+        <h2 id="photo-title">2. 野菜を1種類、選ぶ</h2>
+        <div class="trial-photo" id="photo"><div id="placeholder"><span class="trial-leaf" aria-hidden="true">⌗</span><p>まずはトマトや、にんじんから。</p><span>袋を外し、明るい場所で撮ると比べやすくなります。</span></div><canvas id="preview" width="224" height="224" hidden aria-label="判定する写真"></canvas></div>
+        <div class="button-row"><button class="secondary" id="take">写真を撮る</button><button class="secondary" id="choose">写真を選ぶ</button></div>
+        <input id="camera-file" type="file" accept="image/*" capture="environment" hidden><input id="photo-file" type="file" accept="image/*" hidden>
+        <button id="recognize" class="primary trial-full" disabled>この写真を読み取る</button>
+        <p class="trial-note">おためし画面では在庫に登録しません。個数・期限・鮮度は判定しません。</p>
+      </section>
+      <section id="result" class="settings-card" hidden aria-labelledby="result-title" aria-live="polite"><span class="eyebrow">PHOTO CANDIDATES</span><h2 id="result-title">候補</h2><p id="result-note"></p><ol id="candidates"></ol><p id="timing" class="trial-timing"></p><p class="trial-note">類似度は写真と候補の近さで、正解の確率ではありません。候補にない食品でも、似た名前が出ることがあります。</p></section>
+      <details class="settings-card trial-details"><summary>対応する種類・検証ログ</summary><p id="vocabulary"></p><p>SigLIP 2 Base / 224px / int8 / CPU。iPhoneでの速度と精度を確認する試用版です。</p><pre id="log"></pre><div class="button-row"><button class="secondary" id="copy">ログをコピー</button><button class="text-button" id="forget">この試用モデルを削除</button></div><p id="copy-status" role="status"></p><p><a href="https://huggingface.co/google/siglip2-base-patch16-224" target="_blank" rel="noopener noreferrer">モデル（Apache 2.0）</a> · <a href="./vendor/ort-1.30.0/LICENSE.txt">実行環境のライセンス</a></p></details>
+      <p class="trial-note">保存済みでもページを開き直すと起動が必要です。端末がサイトデータを整理すると、モデルの再取得が必要になることがあります。</p>
+    </main>
+  </div>
+  <noscript>JavaScriptを有効にしてお試しください。</noscript>
+  <script type="module" src="./siglip.js"></script>
+</body>
+</html>

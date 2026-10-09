@@ -17,6 +17,8 @@
     "ios:prepare": "node scripts/prepare-ios.mjs"
   },
   "devDependencies": {
+    "@huggingface/transformers": "4.3.1",
+    "onnxruntime-web": "1.30.0",
     "wrangler": "4.148.0"
   },
   "overrides": {

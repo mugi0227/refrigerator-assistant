@@ -5,7 +5,7 @@ import {promptFor} from '../public/vision.js';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),out=resolve(root,'ios/Fridge/Resources/Web');
 mkdirSync(out,{recursive:true});
 writeFileSync(resolve(out,'scanner-prompt.txt'),promptFor(null));
-for(const name of readdirSync(resolve(root,'public'))){if(['_headers','sw.js','manifest.webmanifest','barcode-worker.js'].includes(name))continue;copyFileSync(resolve(root,'public',name),resolve(out,name));}
+for(const name of readdirSync(resolve(root,'public'))){if(['_headers','sw.js','manifest.webmanifest','barcode-worker.js','vendor'].includes(name)||name.startsWith('siglip'))continue;copyFileSync(resolve(root,'public',name),resolve(out,name));}
 const index=resolve(out,'index.html');let html=readFileSync(index,'utf8');
 const version=readFileSync(resolve(root,'ios/project.yml'),'utf8').match(/MARKETING_VERSION:\s*([\d.]+)/)?.[1];
 if(!version)throw new Error('Missing iOS app version');

@@ -14,7 +14,7 @@ async function storeModel({url,name,expectedBytes,signal,onProgress}) {
   if(cached){onProgress({phase:'cached',loaded:cached.size,total:cached.size});return cached;}
   if(!navigator.storage?.getDirectory)throw new Error('このブラウザではモデルの端末保存を利用できません。「ファイルから」で読み込んでください。');
   const space=await navigator.storage.estimate?.();
-  if(space?.quota&&space.quota-(space.usage||0)<expectedBytes)throw new Error('モデル保存用の空き容量が不足しています。約2GB以上の空きを確保するか、「ファイルから」で読み込んでください。');
+  if(space?.quota&&space.quota-(space.usage||0)<expectedBytes)throw new Error(`モデル保存用の空き容量が不足しています。約${Math.ceil(expectedBytes/1e6)}MB以上の空きを確保してください。`);
   const root=await navigator.storage.getDirectory();
   let writer,reader,loaded=0;
   try {
