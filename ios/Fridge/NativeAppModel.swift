@@ -39,6 +39,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     private var loop: Task<Void,Never>?, registration: Task<Void,Never>?
     private var generation = UUID(), lockedKey: String?, dateVote: PrintedDate?, lastStamp = 0.0, foodVote: String?
     private var productLookup: Task<Void,Never>?
+    private var confirmedExpiryID: String?
     init() {
         modelSaved = models.saved
         models.onProgress = { [weak self] phase, bytes, total in
@@ -77,7 +78,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         pending = nil; candidate = nil; countdown = 0; lockedKey = nil; dateVote = nil; foodVote = nil; lastStamp = 0; needsReview = false
         marks = []; detectedDate = nil; lastAnswer = ""; lastSeconds = 0
         printedDetail = "印字はまだ読み取っていません。"
-        capturedImage = nil; foodRegions = []; expiryMode = false; aiExpiryProposal = nil
+        capturedImage = nil; foodRegions = []; expiryMode = false; aiExpiryProposal = nil; confirmedExpiryID = nil
     }
     func pauseScan() { paused.toggle(); generation = UUID(); registration?.cancel(); pending = nil; countdown = 0; dateVote = nil; foodVote = nil; productLookup?.cancel(); scanMessage = paused ? "一時停止中":"読み取りを再開しました。" }
     func registrationForReview() { registration?.cancel(); pending = nil; countdown = 0; paused = true; generation = UUID(); dateVote = nil; foodVote = nil; productLookup?.cancel() }
@@ -86,6 +87,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         guard !aiBusy, candidate != nil, cameraRunning || demo else { return }
         generation = UUID(); productLookup?.cancel(); paused = false
         capturedImage = nil; foodRegions = []; marks = []; dateVote = nil; lastStamp = 0; aiExpiryProposal = nil
+        confirmedExpiryID = nil
         expiryMode = true; scanMessage = "賞味期限・消費期限と日付を枠内へ。自動で読み取ります。"
     }
     func endExpiry() {
@@ -97,7 +99,10 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         guard aiReady, !aiBusy, !loading, !paused, expiryMode, let selected = candidate else { return }
         generation = UUID(); productLookup?.cancel(); dateVote = nil; aiExpiryProposal = nil
         let token = generation; aiBusy = true; scanMessage = "印字された期限をAIで読み取り中…"
-        defer { aiBusy = false }
+        defer {
+            aiBusy = false
+            if token != generation, capturedImage != nil, expiryMode { scanMessage = "中止しました。期限を撮り直せます。" }
+        }
         do {
             let data: Data
             if let photo { data = photo }
@@ -120,6 +125,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func applyAIExpiry() {
         guard !aiBusy, expiryMode, let proposal = aiExpiryProposal, candidate != nil else { return }
         candidate?.expiryDate = proposal.date; candidate?.expiryType = proposal.type; needsReview = true
+        confirmedExpiryID = candidate?.id
         endExpiry()
         scanMessage = proposal.type == "unknown" ? "日付を反映しました。登録前に賞味・消費を選んでください。":"期限を反映しました。候補を確認して登録してください。"
     }
@@ -209,6 +215,9 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     }
     func acceptPrinted(_ lines: [[String:Any]], stamp: Double) {
         guard stamp > lastStamp, !paused, !aiBusy, capturedImage == nil else { return }; lastStamp = stamp
+        // An explicitly accepted AI date is stable until the user starts a new
+        // expiry reading. Background OCR must not overwrite that decision.
+        if let confirmedExpiryID, candidate?.id == confirmedExpiryID { return }
         marks.removeAll { $0.isDate }; marks.append(contentsOf:ScanMark.dates(lines))
         guard let date = NativeReading.printed(lines) else {
             dateVote = nil; detectedDate = nil

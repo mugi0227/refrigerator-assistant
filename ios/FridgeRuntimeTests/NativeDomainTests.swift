@@ -89,6 +89,9 @@ final class NativeDomainTests: XCTestCase {
         model.aiBusy = false; model.applyAIExpiry()
         XCTAssertEqual(model.candidate?.expiryDate,"2027-02-01"); XCTAssertEqual(model.candidate?.id,selected)
         XCTAssertFalse(model.expiryMode); XCTAssertNil(model.aiExpiryProposal); XCTAssertTrue(store.active.isEmpty)
+        model.acceptPrinted([["text":"賞味期限 2028.01.01","confidence":0.9]],stamp:10)
+        model.acceptPrinted([["text":"賞味期限 2028.01.01","confidence":0.9]],stamp:11)
+        XCTAssertEqual(model.candidate?.expiryDate,"2027-02-01")
         model.beginExpiry(); model.aiExpiryProposal = PrintedDate(date:"2028-01-01",type:"unknown",raw:"28.01.01")
         model.nextFood(); model.applyAIExpiry(); XCTAssertNil(model.candidate)
     }
