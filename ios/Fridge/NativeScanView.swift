@@ -8,6 +8,7 @@ struct NativeScanView: View {
     @State private var editing: Food?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var details = false
+    @State private var editingExpiry = false
 
     var body: some View {
         ZStack {
@@ -39,6 +40,15 @@ struct NativeScanView: View {
         }
         .sheet(item:$editing,onDismiss:{ model.paused = false }) { food in
             FoodEditor(food:food) { next in try model.confirm(next,store:store) }
+        }
+        .sheet(isPresented:$editingExpiry,onDismiss:{ model.paused = false }) {
+            if let food = model.candidate {
+                ExpiryEditor(food:food) { type, date in
+                    guard model.candidate?.id == food.id else { return }
+                    model.candidate?.expiryType = type; model.candidate?.expiryDate = date
+                    model.scanMessage = "期限を候補に反映しました。確認して登録してください。"
+                }
+            }
         }
         .sheet(isPresented:$details) {
             NavigationStack {
@@ -118,7 +128,7 @@ struct NativeScanView: View {
                 HStack {
                     Button("撮影を終える") { model.endExpiry() }.frame(minHeight:44)
                     Spacer()
-                    Button("期限を手入力") { if let food = model.candidate { model.endExpiry(); model.registrationForReview(); editing = food } }.frame(minHeight:44)
+                    Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:44)
                 }.accessibilityIdentifier("expiryModeControls")
             } else if model.capturedImage != nil, !model.aiBusy {
                 Button { model.nextFood(); if model.camera == nil { Task { await model.startCamera(store:store) } } } label: {
@@ -163,17 +173,20 @@ struct NativeScanView: View {
                 HStack(spacing:8) {
                     chip(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit)":"数量を確認",icon:"number",food:food)
                     if let date = food.expiryDate {
-                        chip("\(FoodRules.expiryTypes[food.expiryType] ?? "日付") \(date)",icon:"calendar",food:food)
+                        Button { openExpiryEditor() } label: {
+                            Label("\(FoodRules.expiryTypes[food.expiryType] ?? "日付") \(date)",systemImage:"calendar")
+                                .font(.subheadline).padding(.horizontal,12).frame(minHeight:44).background(.white.opacity(0.12),in:Capsule())
+                        }
                     }
                     if let code = food.barcode { chip(String(code.hasPrefix("0") ? code.dropFirst():Substring(code)),icon:"barcode",food:food) }
                 }
             }
-            if !model.expiryMode {
+            if !model.expiryMode, food.kind != "produce" {
                 HStack(spacing:12) {
                     Button { model.beginExpiry() } label: { Label(food.expiryDate == nil ? "期限を読み取る":"期限を再読取",systemImage:"viewfinder").frame(minHeight:44) }
                         .disabled(!model.cameraRunning && !model.demo).accessibilityIdentifier("readExpiry")
                     Spacer(minLength:0)
-                    Button("期限を手入力") { model.registrationForReview(); editing = food }.frame(minHeight:44)
+                    Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:44)
                 }.font(.subheadline)
             }
             Button { model.registrationForReview(); editing = food } label: {
@@ -185,6 +198,43 @@ struct NativeScanView: View {
     private func chip(_ text: String, icon: String, food: Food) -> some View {
         Button { model.registrationForReview(); editing = food } label: {
             Label(text,systemImage:icon).font(.subheadline).padding(.horizontal,12).frame(minHeight:44).background(.white.opacity(0.12),in:Capsule())
+        }
+    }
+    private func openExpiryEditor() { model.endExpiry(); model.registrationForReview(); editingExpiry = true }
+}
+
+private struct ExpiryEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let food: Food
+    let apply: (String,String?) -> Void
+    @State private var type: String
+    @State private var date: Date
+    init(food: Food, apply: @escaping (String,String?) -> Void) {
+        self.food = food; self.apply = apply
+        _type = State(initialValue:food.expiryType)
+        _date = State(initialValue:FoodRules.dateFormatter().date(from:food.expiryDate ?? FoodRules.today) ?? Date())
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(food.name.isEmpty ? "選択中の商品":food.name) {
+                    Picker("期限の種類",selection:$type) {
+                        Text("選んでください").tag("unknown"); Text("賞味期限").tag("best_before")
+                        Text("消費期限").tag("use_by"); Text("使い切り目安").tag("estimate")
+                    }
+                    DatePicker("日付",selection:$date,displayedComponents:.date)
+                        .datePickerStyle(.graphical).environment(\.timeZone,TimeZone(secondsFromGMT:0)!)
+                }
+                Text("ここでは候補の期限だけを変更します。在庫への登録は、次の確認画面で行います。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }.navigationTitle("期限を入力").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement:.cancellationAction) { Button("キャンセル") { dismiss() } }
+                    ToolbarItem(placement:.confirmationAction) {
+                        Button("候補に反映") { apply(type,FoodRules.dateFormatter().string(from:date)); dismiss() }
+                            .disabled(type == "unknown").accessibilityIdentifier("applyExpiry")
+                    }
+                }
         }
     }
 }

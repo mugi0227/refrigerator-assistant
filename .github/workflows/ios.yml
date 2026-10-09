@@ -71,3 +71,15 @@ jobs:
             ios/build-simulator/summary.json
             ios/build-simulator/screenshots
           retention-days: 1
+      - name: Save compact visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fridge-visual-evidence
+          path: |
+            ios/build-simulator/screenshots
+            ios/build-simulator/summary.json
+            ios/build-runtime/*-summary.json
+            ios/build-runtime/Runtime-attachments/*.png
+            ios/build-runtime/Runtime-attachments/manifest.json
+          retention-days: 1

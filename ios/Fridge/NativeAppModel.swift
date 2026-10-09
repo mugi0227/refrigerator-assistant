@@ -198,7 +198,11 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func recognize(store: HouseholdStore, photo: Data? = nil) async {
         guard aiReady, !aiBusy, !loading, !paused else { return }
         resetScan(); scanMessage = "いまの画像を読み取り中…"
-        let token = generation; aiBusy = true; defer { aiBusy = false }
+        let token = generation; aiBusy = true
+        defer {
+            aiBusy = false
+            if token != generation, capturedImage != nil { scanMessage = "読み取りを中止しました。「次を撮影する」で戻れます。" }
+        }
         do {
             let image: Data
             if let photo { image = photo }
