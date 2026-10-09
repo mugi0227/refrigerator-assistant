@@ -1,4 +1,4 @@
-const CACHE='fridge-shell-v5-siglip';
+const CACHE='fridge-shell-v6-siglip';
 const SHELL=['./','./index.html','./styles.css','./app.js','./core.js','./db.js','./vision.js','./model-cache.js','./native-bridge.js','./scanner.js','./printed-expiry.js','./barcode-worker.js','./icon.svg','./manifest.webmanifest','./siglip.html','./siglip.css','./siglip.js','./siglip-core.js','./siglip-worker.js','./siglip-labels.json'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('fridge-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
@@ -6,7 +6,7 @@ self.addEventListener('fetch',event=>{
   const url=new URL(event.request.url);
   // Never cache model streams, remote API data, uploads, or arbitrary origins.
   if(event.request.method!=='GET'||url.origin!==self.location.origin)return;
-  const basename=url.pathname.split('/').pop();
+  const basename=url.pathname.split('/').pop()==='siglip'?'siglip.html':url.pathname.split('/').pop();
   if(!['','index.html','styles.css','app.js','core.js','db.js','vision.js','model-cache.js','native-bridge.js','scanner.js','printed-expiry.js','barcode-worker.js','icon.svg','manifest.webmanifest','siglip.html','siglip.css','siglip.js','siglip-core.js','siglip-worker.js','siglip-labels.json','ort.wasm.min.mjs','ort-wasm-simd-threaded.mjs','ort-wasm-simd-threaded.wasm'].includes(basename))return;
-  event.respondWith(fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();event.waitUntil(caches.open(CACHE).then(c=>c.put(event.request,copy)));}return response;}).catch(async()=>{const cached=await caches.match(event.request);return cached||new Response('オフラインです。初回はオンラインで開いてください。',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}});}));
+  event.respondWith(fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();event.waitUntil(caches.open(CACHE).then(c=>c.put(event.request,copy)));}return response;}).catch(async()=>{const cached=await caches.match(event.request)||(basename==='siglip.html'?await caches.match(new URL('./siglip.html',self.location.href)):null);return cached||new Response('オフラインです。初回はオンラインで開いてください。',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}});}));
 });
