@@ -239,6 +239,7 @@ struct NativeSettingsView: View {
                     Text("Gemma 4 E2B").font(.headline)
                     Text("保存済みの約2.6GBモデルを引き継ぎます。公開ライブラリによる起動検査後、同じAIを使って読み取ります。").font(.subheadline)
                     Text(model.status).textSelection(.enabled).accessibilityIdentifier("aiStatus")
+                    if !model.aiErrorDetail.isEmpty { DisclosureGroup("エラーの詳細") { Text(model.aiErrorDetail).font(.caption).textSelection(.enabled) } }
                     if model.loading { ProgressView(value:model.progress); Button("ダウンロード・生成を中止") { model.cancelAI() } }
                     Text(model.modelSaved ? "モデル：保存済み":"モデル：未保存").font(.caption)
                     Button(model.modelSaved ? "保存したモデルで起動":"モデルを保存して起動") { Task { await model.loadAI() } }.disabled(model.loading || model.aiBusy).accessibilityIdentifier("loadAI")
@@ -260,7 +261,7 @@ struct NativeSettingsView: View {
                     Toggle("検知音・登録音",isOn:setting(\.sound))
                     Toggle("バーコードから商品名を探す",isOn:setting(\.externalLookup))
                     Text("オンの場合はOpen Food Factsに番号だけを送ります。写真は送信しません。未収録の商品は手入力できます。").font(.caption)
-                    Picker("読み取り間隔",selection:setting(\.interval)) { Text("短め · 0.6秒").tag(600); Text("標準 · 1.2秒").tag(1200); Text("ゆったり · 2.5秒").tag(2500) }
+                    Picker("期限を探す間隔",selection:setting(\.interval)) { Text("短め · 0.6秒").tag(600); Text("標準 · 1.2秒").tag(1200); Text("ゆったり · 2.5秒").tag(2500) }
                     Picker("最初の保存場所",selection:setting(\.location)) { Text("冷蔵").tag("fridge"); Text("冷凍").tag("freezer"); Text("常温").tag("pantry") }
                 }
                 Section("野菜の使い切り目安") {

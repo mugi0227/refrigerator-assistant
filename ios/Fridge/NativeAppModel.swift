@@ -10,6 +10,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     @Published var loading = false
     @Published var modelSaved = false
     @Published var status = "AIを使わず、手入力・バーコード・印字の読み取りができます。"
+    @Published var aiErrorDetail = ""
     @Published var progress: Double?
     @Published var camera: NativeCamera?
     @Published var cameraRunning = false
@@ -44,14 +45,19 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     }
     func loadAI() async {
         guard !loading, !aiBusy else { return }
-        loading = true; aiReady = false; await stopCamera(); let token = generation; UIApplication.shared.isIdleTimerDisabled = true
+        loading = true; aiReady = false; aiErrorDetail = ""; await stopCamera(); let token = generation; UIApplication.shared.isIdleTimerDisabled = true
         defer { loading = false; progress = nil; modelSaved = models.saved; UIApplication.shared.isIdleTimerDisabled = false }
         do {
             let model = try await models.obtain(); progress = nil
             try await ai.load(model) { [weak self] phase in Task { @MainActor in self?.status = phase } }
             guard generation == token else { try await ai.unload(); throw FridgeError.message("起動中に画面が中断されました。再度起動してください。") }
             aiReady = true; status = "準備完了：リンゴと赤色を認識しました。"
-        } catch { status = "起動できませんでした。\n\(error.localizedDescription)" }
+        } catch {
+            aiErrorDetail = error.localizedDescription
+            status = aiErrorDetail.contains("per_layer_embedding_lookup_")
+                ? "AIの内部状態を復旧できませんでした。Fridgeを完全に終了して開き直し、保存したモデルで起動してください。モデルの再ダウンロードは不要です。"
+                : "AIを起動できませんでした。下の詳細を確認するか、AIログを共有してください。"
+        }
     }
     func unloadAI() async { do { try await ai.unload(); aiReady = false; status = "AIのメモリを解放しました。" } catch { alert = error.localizedDescription } }
     func importModel(_ url: URL) async {
@@ -85,7 +91,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
                     guard let self, let store, self.cameraRunning else { return }
                     self.marks.removeAll { Date().timeIntervalSince($0.seenAt) > 1.2 }
                     if !self.paused, !self.aiBusy { await self.readPrinted(store:store) }
-                    try? await Task.sleep(nanoseconds:500_000_000)
+                    try? await Task.sleep(nanoseconds:UInt64(max(300,store.state.settings.interval))*1_000_000)
                 }
             }
         } catch { if camera === value { camera = nil; scanMessage = error.localizedDescription } }
