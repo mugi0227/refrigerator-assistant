@@ -6,9 +6,11 @@ final class NativeChatCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var chat: LiteRTChat?
     private var cancelled = false
+    private var revision = 0
     var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    var cancellationRevision: Int { lock.lock(); defer { lock.unlock() }; return revision }
     func set(_ value: LiteRTChat?) { lock.lock(); chat = value; lock.unlock() }
-    func cancel() { lock.lock(); cancelled = true; let value = chat; lock.unlock(); try? value?.cancel() }
+    func cancel() { lock.lock(); cancelled = true; revision += 1; let value = chat; lock.unlock(); try? value?.cancel() }
 }
 
 // Uses precisely the public API that passed on the physical device. No copied
@@ -63,6 +65,7 @@ actor NativeAI {
         catch { note("ERROR \(error.localizedDescription)"); cancellation.set(nil); self.chat = nil; throw error }
     }
     private func stream(_ current: LiteRTChat, _ prompt: String, image: Data?) async throws -> String {
+        let revision = cancellation.cancellationRevision
         let holder = NativeChatCancellation(); holder.set(current)
         let timer = DispatchWorkItem { holder.cancel() }
         DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+90,execute:timer)
@@ -73,6 +76,7 @@ actor NativeAI {
             guard result.utf8.count <= 24000 else { try? current.cancel(); throw FridgeError.message("回答が長すぎるため中止しました。AIを再起動してください。") }
         }
         try Task.checkCancellation()
+        if cancellation.cancellationRevision != revision { throw CancellationError() }
         if holder.isCancelled { throw FridgeError.message("AIの応答が90秒以内に終わらなかったため中止しました。設定から再起動してください。") }
         return result
     }

@@ -28,6 +28,10 @@ collect_results() {
     mkdir -p ios/build-runtime/probe-logs
     cp -R "$DATA_CONTAINER/Documents/GemmaProbe-CI/." ios/build-runtime/probe-logs/
   fi
+  if [ -n "$DATA_CONTAINER" ] && [ -d "$DATA_CONTAINER/Documents/NativeAI" ]; then
+    mkdir -p ios/build-runtime/native-logs
+    cp -R "$DATA_CONTAINER/Documents/NativeAI/." ios/build-runtime/native-logs/
+  fi
   if [ -d ios/build-runtime/Runtime.xcresult ]; then
     xcrun xcresulttool get test-results summary --path ios/build-runtime/Runtime.xcresult > ios/build-runtime/summary.json || true
     xcrun xcresulttool export attachments --path ios/build-runtime/Runtime.xcresult --output-path ios/build-runtime/attachments || true

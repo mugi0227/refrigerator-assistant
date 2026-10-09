@@ -189,7 +189,7 @@ struct NativeScanView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment:.leading,spacing:18) {
-                    HStack { Text("見せるだけで、記録。").font(.title2.bold()); Spacer(); Button("手入力") { editing = Food() } }
+                    HStack { Text("見せるだけで、記録。").font(.title2.bold()); Spacer(); Button("手入力") { model.registrationForReview(); var food = Food(); food.location = model.location; editing = food } }
                     Picker("操作",selection:$model.scanMode) { Text("登録").tag("add"); Text("消費").tag("consume") }.pickerStyle(.segmented).onChange(of:model.scanMode) { _, _ in model.nextFood() }
                     Picker("保存場所",selection:$model.location) { Text("冷蔵").tag("fridge"); Text("冷凍").tag("freezer"); Text("常温").tag("pantry") }.onChange(of:model.location) { _, _ in model.nextFood() }
                     if model.demo { Label("操作デモ：在庫には保存しません",systemImage:"info.circle").foregroundStyle(.orange) }
@@ -281,7 +281,7 @@ struct RecipesView: View {
                     Text("期限切れとして登録した食品は候補から除きます。調理前には実物の状態を確認してください。").font(.subheadline)
                     Button("在庫から献立を考える") { Task { await model.makeRecipes(store:store) } }.disabled(!model.aiReady || model.aiBusy || store.active.isEmpty)
                     if !model.aiReady { Text("設定でAIを起動してください。").font(.caption) }
-                    if model.recipeBusy { ProgressView("献立を考えています…"); Button("中止") { model.ai.cancellation.cancel() } }
+                    if model.recipeBusy { ProgressView("献立を考えています…"); Button("中止") { model.cancelAI() } }
                 }
                 ForEach(model.recipes) { recipe in
                     Section(recipe.name) {
@@ -328,7 +328,7 @@ struct NativeSettingsView: View {
                     Text("Gemma 4 E2B").font(.headline)
                     Text("保存済みの約2.6GBモデルを引き継ぎます。公開ライブラリによる起動検査後、同じAIを使って読み取ります。").font(.subheadline)
                     Text(model.status).textSelection(.enabled).accessibilityIdentifier("aiStatus")
-                    if model.loading { ProgressView(value:model.progress); Button("ダウンロード・生成を中止") { model.models.cancel(); model.ai.cancellation.cancel() } }
+                    if model.loading { ProgressView(value:model.progress); Button("ダウンロード・生成を中止") { model.cancelAI() } }
                     Text(model.modelSaved ? "モデル：保存済み":"モデル：未保存").font(.caption)
                     Button(model.modelSaved ? "保存したモデルで起動":"モデルを保存して起動") { Task { await model.loadAI() } }.disabled(model.loading || model.aiBusy).accessibilityIdentifier("loadAI")
                     Button("モデルをファイルから") { modelImport = true }.disabled(model.loading || model.aiBusy)
@@ -378,6 +378,7 @@ struct NativeSettingsView: View {
                 .fileImporter(isPresented:$importing,allowedContentTypes:[.json]) { result in
                     do {
                         let url = try result.get(), access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+                        guard (try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? Int.max) <= 5*1024*1024 else { throw FridgeError.message("5MB以下のバックアップを選んでください。") }
                         let data = try Data(contentsOf:url); _ = try Household.importBackup(data); restoreData = data; restoreConfirm = true
                     } catch { model.alert = error.localizedDescription }
                 }

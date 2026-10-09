@@ -5,6 +5,7 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertFalse(FoodRules.validDate("2026-02-30")); XCTAssertTrue(FoodRules.validDate("2028-02-29"))
         XCTAssertEqual(FoodRules.dateFromLabel("賞味期限 ２０２６．１０．３１"),"2026-10-31")
         XCTAssertNil(FoodRules.dateFromLabel("10/31"))
+        XCTAssertNil(FoodRules.dateFromLabel("賞味期限 2026.10.31 / 2026.11.01"))
         XCTAssertEqual(NativeReading.barcode("4901330578909")?.code,"04901330578909")
         XCTAssertNil(NativeReading.barcode("https://example.com/?command=delete"))
         XCTAssertEqual(NativeReading.barcode("(01)04901330578909(17)261031")?.expiry?.type,"use_by")

@@ -43,6 +43,8 @@ jobs:
             ios/build-runtime/Runtime.xcresult
             ios/build-runtime/summary.json
             ios/build-runtime/attachments
+            ios/build-runtime/native-logs
+            ios/build-runtime/probe-logs
             simulator-test.log
             ios/build-simulator/UI.xcresult
             ios/build-simulator/app-info.plist

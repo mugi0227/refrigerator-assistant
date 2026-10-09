@@ -81,10 +81,24 @@ struct Staple: Codable, Identifiable {
         guard !FoodRules.clean(name).isEmpty, FoodRules.units.contains(unit), minimum.isFinite, target.isFinite, minimum > 0, target >= minimum, target <= 100000 else { throw FridgeError.message("補充ラインと目標数量を確認してください。") }
     }
 }
-struct ShoppingItem: Codable, Identifiable { var id = UUID().uuidString, name: String; var done = false }
+struct ShoppingItem: Codable, Identifiable {
+    var id = UUID().uuidString
+    var name: String
+    var done = false
+}
 struct FoodChange: Codable { var before: Food?; var after: Food }
-struct FoodEvent: Codable, Identifiable { var id = UUID().uuidString, kind: String, at = ISO8601DateFormatter().string(from:Date()); var changes: [FoodChange]; var undone = false }
-struct ProductEntry: Codable { var name: String, kind = "packaged", unit = "個" }
+struct FoodEvent: Codable, Identifiable {
+    var id = UUID().uuidString
+    var kind: String
+    var at = ISO8601DateFormatter().string(from:Date())
+    var changes: [FoodChange]
+    var undone = false
+}
+struct ProductEntry: Codable {
+    var name: String
+    var kind = "packaged"
+    var unit = "個"
+}
 struct HouseholdSettings: Codable {
     var sound = true, interval = 1200, confirmMs = 5000, location = "fridge", externalLookup = false, shelfDays: [String:Int] = [:]
     enum CodingKeys: String, CodingKey { case sound, interval, confirmMs, location, externalLookup, shelfDays }
