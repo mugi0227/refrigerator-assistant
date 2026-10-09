@@ -31,6 +31,9 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     @Published var marks: [ScanMark] = []
     @Published var detectedDate: String?
     @Published var printedDetail = "印字はまだ読み取っていません。"
+    @Published var capturedImage: UIImage?
+    @Published var foodRegions: [FoodRegion] = []
+    @Published var expiryMode = false
     let ai = NativeAI(), models = ModelStore()
     private var loop: Task<Void,Never>?, registration: Task<Void,Never>?
     private var generation = UUID(), lockedKey: String?, dateVote: PrintedDate?, lastStamp = 0.0, foodVote: String?
@@ -73,10 +76,18 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         pending = nil; candidate = nil; countdown = 0; lockedKey = nil; dateVote = nil; foodVote = nil; lastStamp = 0; needsReview = false
         marks = []; detectedDate = nil; lastAnswer = ""; lastSeconds = 0
         printedDetail = "印字はまだ読み取っていません。"
+        capturedImage = nil; foodRegions = []; expiryMode = false
     }
     func pauseScan() { paused.toggle(); generation = UUID(); registration?.cancel(); pending = nil; countdown = 0; dateVote = nil; foodVote = nil; productLookup?.cancel(); scanMessage = paused ? "一時停止中":"読み取りを再開しました。" }
     func registrationForReview() { registration?.cancel(); pending = nil; countdown = 0; paused = true; generation = UUID(); dateVote = nil; foodVote = nil; productLookup?.cancel() }
-    func nextFood() { resetScan(); scanMessage = "次の食品を映してください。" }
+    func nextFood() { resetScan(); paused = false; scanMessage = "次の食品を映してください。" }
+    func beginExpiry() {
+        guard !aiBusy, candidate != nil, cameraRunning || demo else { return }
+        generation = UUID(); productLookup?.cancel(); paused = false
+        capturedImage = nil; foodRegions = []; marks = []; dateVote = nil; lastStamp = 0
+        expiryMode = true; scanMessage = "賞味期限・消費期限と日付を枠内へ。自動で読み取ります。"
+    }
+    func endExpiry() { expiryMode = false; dateVote = nil; scanMessage = "候補を確認して登録できます。" }
     func startCamera(store: HouseholdStore) async {
         guard camera == nil, !loading else { return }
         resetScan(); demo = false; paused = false
@@ -92,7 +103,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
                 while !Task.isCancelled {
                     guard let self, let store, self.cameraRunning else { return }
                     self.marks.removeAll { Date().timeIntervalSince($0.seenAt) > 1.2 }
-                    if !self.paused, !self.aiBusy { await self.readPrinted(store:store) }
+                    if !self.paused, !self.aiBusy, self.capturedImage == nil { await self.readPrinted(store:store) }
                     try? await Task.sleep(nanoseconds:UInt64(max(300,store.state.settings.interval))*1_000_000)
                 }
             }
@@ -106,7 +117,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func background() async { cancelAI(); await stopCamera() }
     func key(_ value: Food) -> String { value.barcode ?? FoodRules.canonical(value.name) }
     func codes(_ codes: [[String:String]], store: HouseholdStore) {
-        guard cameraRunning, !paused, !demo, !aiBusy else { return }
+        guard cameraRunning, !paused, !demo, !aiBusy, capturedImage == nil, !expiryMode else { return }
         marks.removeAll { !$0.isDate }
         marks.append(contentsOf:codes.compactMap(ScanMark.barcode))
         let observations = codes.compactMap { NativeReading.barcode($0["text"] ?? "") }
@@ -145,7 +156,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         }
     }
     func readPrinted(store: HouseholdStore) async {
-        guard let camera, !paused, !aiBusy else { return }
+        guard let camera, !paused, !aiBusy, capturedImage == nil else { return }
         let token = generation
         do {
             let frame = try await camera.readText()
@@ -162,7 +173,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         }
     }
     func acceptPrinted(_ lines: [[String:Any]], stamp: Double) {
-        guard stamp > lastStamp, !paused else { return }; lastStamp = stamp
+        guard stamp > lastStamp, !paused, !aiBusy, capturedImage == nil else { return }; lastStamp = stamp
         marks.removeAll { $0.isDate }; marks.append(contentsOf:ScanMark.dates(lines))
         guard let date = NativeReading.printed(lines) else {
             dateVote = nil; detectedDate = nil
@@ -194,15 +205,18 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
             else if let camera { image = try await camera.captureImage() }
             else { throw FridgeError.message("カメラを開始するか写真を選んでください。") }
             guard token == generation, !paused else { return }
+            capturedImage = UIImage(data:image)
             let started = Date(); let response = try await ai.run(NativeReading.prompt,image:image)
             guard token == generation, !paused else { return }
             lastAnswer = response; lastSeconds = Date().timeIntervalSince(started)
+            foodRegions = FoodRegion.parse(response)
             guard var food = try NativeReading.observation(response,location:location) else { scanMessage = "食品を1種類ずつ映してください。"; foodVote = nil; return }
             if lockedKey == key(food) { scanMessage = "登録済みです。次の1個は「次の食品」へ。"; return }
             if food.kind == "produce" { food.expiryType = "estimate"; food.expiryDate = FoodRules.plan(food.name,freshness:food.freshness,overrides:store.state.settings.shelfDays) }
             candidate = food
             if food.quantity == 0 { needsReview = true; scanMessage = "\(food.name)：数量を確認してください。"; return }
             needsReview = true; scanMessage = "\(food.name) \(food.quantity.formatted())\(food.unit)：候補を確認してください。"
+            if foodRegions.isEmpty { scanMessage += " 位置は特定できませんでした。" }
         } catch {
             guard token == generation else { return }
             scanMessage = "読み取れませんでした。もう一度撮影できます。\n\(error.localizedDescription)"; aiReady = await ai.isReady()
@@ -234,6 +248,20 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         else { food.expiryType = "estimate"; food.expiryDate = FoodRules.plan(food.name,freshness:1,overrides:[:]) }
         candidate = food; stage(food,store:store)
     }
+    #if DEBUG
+    func demoFrozenImage() async {
+        await stopCamera(); demo = true; aiBusy = true
+        let token = generation
+        capturedImage = UIImage(contentsOfFile:Bundle.main.url(forResource:"apple",withExtension:"png",subdirectory:"Probe")!.path)
+        scanMessage = "表示デモ：この写真を読み取り中…"
+        try? await Task.sleep(nanoseconds:4_000_000_000)
+        defer { aiBusy = false }
+        guard generation == token else { return }
+        let json = #"{"kind":"produce","name":"りんご","count":2,"boxes":[{"label":"りんご","count":2,"box_2d":[275,170,640,830]}]}"#
+        foodRegions = FoodRegion.parse(json); candidate = try? NativeReading.observation(json,location:location)
+        scanMessage = "表示デモ：枠と数量の確認（AIは実行していません）。"
+    }
+    #endif
     func makeRecipes(store: HouseholdStore) async {
         guard aiReady, !aiBusy else { alert = "設定でAIを起動し、読み取りの終了後にお試しください。"; return }
         aiBusy = true; recipeBusy = true; defer { aiBusy = false; recipeBusy = false }

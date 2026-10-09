@@ -19,7 +19,7 @@ struct ScanMark: Identifiable {
     }
     static func dates(_ lines: [[String:Any]]) -> [ScanMark] {
         lines.compactMap { row in
-            guard let text = row["text"] as? String, (row["confidence"] as? Double ?? 0) >= 0.55,
+            guard let text = row["text"] as? String, NativeReading.usablePrintedLine(row),
                   text.range(of:"製造|加工|包装",options:.regularExpression) == nil,
                   FoodRules.dateFromLabel(text) != nil || text.precomposedStringWithCompatibilityMapping.range(of:"賞味|消費|best\\s*before|use\\s*by|[0-9]{2,4}\\s*[年./-]\\s*[0-9]{1,2}",options:[.regularExpression,.caseInsensitive]) != nil,
                   let x = row["metadataX"] as? Double, let y = row["metadataY"] as? Double,

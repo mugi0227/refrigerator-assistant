@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import Fridge
 final class NativeDomainTests: XCTestCase {
     func testActualWebExportFixture() throws {
@@ -32,6 +33,12 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertNil(NativeReading.printed([line("賞味期限 2026.10.31"),line("消費期限 2026.11.01")]))
         XCTAssertEqual(NativeReading.printed([line("賞味期限",0.56),line("2026.10.31")])?.type,"best_before")
         XCTAssertEqual(NativeReading.printed([line("賞味期限",0.9),line("2026.10.31")])?.type,"unknown")
+        var dotted = line("賞味期限27:02:01 LA"); dotted["confidence"] = 0.30
+        XCTAssertEqual(NativeReading.printed([dotted])?.date,"2027-02-01")
+        dotted["text"] = "27:02:01 LA"; XCTAssertNil(NativeReading.printed([dotted]))
+        dotted["text"] = "賞味期限27:02:30"; XCTAssertNil(NativeReading.printed([dotted]))
+        dotted["text"] = "製造年月日27:02:01"; XCTAssertNil(NativeReading.printed([dotted]))
+        XCTAssertNil(NativeReading.printed([line("12:03:05")]))
     }
     @MainActor func testPersistenceConsumptionUndoAndLegacyImport() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -57,6 +64,29 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertThrowsError(try NativeReading.observation("{\"kind\":\"produce\",\"name\":\"apple and banana\",\"mixed_food_types\":true}",location:"fridge"))
         let food = try NativeReading.observation("{\"kind\":\"produce\",\"name\":\"apple\",\"count\":null}",location:"fridge")
         XCTAssertEqual(food?.name,"りんご"); XCTAssertEqual(food?.quantity,0); XCTAssertNil(food?.expiryDate)
+    }
+    func testFoodRegionCoordinatesRejectInventedOrInvalidPositions() {
+        let json = #"{"kind":"produce","boxes":[{"label":"apple","count":2,"box_2d":[200,100,700,900]},{"label":"bad","count":1,"box_2d":[-1,0,1001,999]}]}"#
+        let boxes = FoodRegion.parse(json)
+        XCTAssertEqual(boxes.count,1); XCTAssertEqual(boxes.first?.name,"りんご"); XCTAssertEqual(boxes.first?.count,2)
+        XCTAssertEqual(boxes.first?.rect,CGRect(x:0.1,y:0.2,width:0.8,height:0.5))
+        XCTAssertTrue(FoodRegion.parse(#"{"kind":"produce","name":"apple","count":2}"#).isEmpty)
+        XCTAssertEqual(FoodRegion.imageFrame(image:CGSize(width:600,height:300),canvas:CGSize(width:300,height:400)),CGRect(x:0,y:125,width:300,height:150))
+    }
+    @MainActor func testFrozenResultAndExpiryModeProtectSelectedItem() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = HouseholdStore(file:path), model = NativeAppModel(); model.cameraRunning = true
+        model.codes([["text":"4901330578909"]],store:store)
+        let selected = model.candidate?.id
+        model.beginExpiry(); XCTAssertTrue(model.expiryMode); XCTAssertEqual(model.candidate?.id,selected)
+        model.codes([["text":"4901234567894"]],store:store); XCTAssertEqual(model.candidate?.id,selected)
+        model.endExpiry(); XCTAssertFalse(model.expiryMode)
+        model.capturedImage = UIImage()
+        model.acceptPrinted([["text":"賞味期限 2027.02.01","confidence":0.9]],stamp:1)
+        model.acceptPrinted([["text":"賞味期限 2027.02.01","confidence":0.9]],stamp:2)
+        XCTAssertNil(model.candidate?.expiryDate)
+        model.nextFood(); XCTAssertNil(model.capturedImage); XCTAssertNil(model.candidate); XCTAssertFalse(model.paused)
+        XCTAssertTrue(store.active.isEmpty)
     }
     @MainActor func testCountdownCannotCommitAfterTargetChangeOrReview() async throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

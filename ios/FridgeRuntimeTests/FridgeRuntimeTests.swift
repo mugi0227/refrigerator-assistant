@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import SwiftUI
 @testable import Fridge
 final class FridgeRuntimeTests: XCTestCase {
     @MainActor private func checkRecipesThroughNativeController(_ model: NativeAppModel) async throws {
@@ -36,10 +37,25 @@ final class FridgeRuntimeTests: XCTestCase {
             if index == 4 { try await ai.load(URL(fileURLWithPath:try XCTUnwrap(config["modelPath"]))) { print("RENEW: \($0)") } }
         }
         let apple = try XCTUnwrap(Bundle.main.url(forResource:"apple",withExtension:"png",subdirectory:"Probe"))
-        let response = try await ai.run(NativeReading.prompt,image:Data(contentsOf:apple))
+        let scanStore = HouseholdStore(file:FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        model.aiReady = true
+        await model.recognize(store:scanStore,photo:Data(contentsOf:apple))
+        let response = model.lastAnswer
         print("NATIVE_PUBLIC_FOOD: \(response)")
-        let food = try NativeReading.observation(response,location:"fridge")
-        XCTAssertEqual(food?.name,"りんご"); XCTAssertNil(food?.expiryDate)
+        XCTAssertEqual(model.candidate?.name,"りんご"); XCTAssertEqual(model.candidate?.quantity,2)
+        XCTAssertNotNil(model.capturedImage); XCTAssertFalse(model.aiBusy); XCTAssertTrue(scanStore.active.isEmpty)
+        let region = try XCTUnwrap(model.foodRegions.first)
+        XCTAssertEqual(region.name,"りんご"); XCTAssertEqual(region.count,2)
+        let expected = CGRect(x:0.17,y:0.275,width:0.66,height:0.365)
+        let overlap = region.rect.intersection(expected)
+        let intersection = overlap.isNull ? 0:overlap.width*overlap.height
+        let union = region.rect.width*region.rect.height+expected.width*expected.height-intersection
+        XCTAssertGreaterThan(intersection/union,0.5,"Food boxes must locate the apples, not just return valid coordinates")
+        let renderer = ImageRenderer(content:FrozenFoodImage(image:try XCTUnwrap(model.capturedImage),regions:model.foodRegions,processing:false).frame(width:390,height:420))
+        if let image = renderer.uiImage {
+            let attachment = XCTAttachment(image:image); attachment.name = "Actual Gemma food boxes"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        model.nextFood(); XCTAssertNil(model.capturedImage); XCTAssertTrue(model.foodRegions.isEmpty)
         // Exercise the same native error class the device hit, then prove the
         // next request works without rebuilding the model or retaining history.
         do {

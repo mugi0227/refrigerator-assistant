@@ -12,8 +12,11 @@ struct NativeScanView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let camera = model.camera {
-                NativeCameraPreview(camera:camera,marks:model.paused ? []:model.marks)
+            if let image = model.capturedImage {
+                FrozenFoodImage(image:image,regions:model.foodRegions,processing:model.aiBusy)
+                    .accessibilityIdentifier("frozenAIImage")
+            } else if let camera = model.camera {
+                NativeCameraPreview(camera:camera,marks:model.paused ? []:model.marks,expiryMode:model.expiryMode)
                     .ignoresSafeArea().accessibilityIdentifier("cameraPreview")
             } else {
                 VStack(spacing:16) {
@@ -30,6 +33,7 @@ struct NativeScanView: View {
         }
         .safeAreaInset(edge:.top,spacing:0) { header }
         .safeAreaInset(edge:.bottom,spacing:0) { controls }
+        .overlay { if model.aiBusy { AIProcessingFrame().ignoresSafeArea().allowsHitTesting(false) } }
         .onAppear {
             if model.camera == nil { model.location = store.state.settings.location }
         }
@@ -67,8 +71,8 @@ struct NativeScanView: View {
         VStack(spacing:12) {
             HStack {
                 VStack(alignment:.leading,spacing:2) {
-                    Text("スキャン").font(.headline)
-                    Text(model.demo ? "デモ · 保存しません":"自動検出 · 手動で登録").font(.caption)
+                    Text(model.expiryMode ? "期限を読み取る":model.capturedImage != nil ? "写真を確認":"スキャン").font(.headline)
+                    Text(model.demo ? "デモ · 保存しません":model.expiryMode ? "枠内を自動で読み取り":model.capturedImage != nil ? "この写真だけをAIが読み取ります":"自動検出 · 手動で登録").font(.caption)
                 }
                 Spacer()
                 Menu {
@@ -82,11 +86,15 @@ struct NativeScanView: View {
                     }
                     Button("操作デモ：トマト",systemImage:"leaf") { Task { await model.stopCamera(); model.demoFood(store:store) } }
                     Button("操作デモ：牛乳と期限",systemImage:"barcode") { Task { await model.stopCamera(); model.demoFood(store:store,withDate:true) } }
+                    #if DEBUG
+                    Button("表示テスト：AIの静止画",systemImage:"sparkles") { Task { await model.demoFrozenImage() } }
+                    #endif
                 } label: { Image(systemName:"ellipsis").frame(width:44,height:44).background(.white.opacity(0.14),in:Circle()) }
+                    .disabled(model.aiBusy)
                     .accessibilityLabel("スキャンのメニュー").accessibilityIdentifier("scanMenu")
             }
             Picker("操作",selection:$model.scanMode) { Text("登録する").tag("add"); Text("使ったものを消費").tag("consume") }
-                .pickerStyle(.segmented).onChange(of:model.scanMode) { _, _ in model.nextFood() }
+                .pickerStyle(.segmented).disabled(model.aiBusy || model.expiryMode).onChange(of:model.scanMode) { _, _ in model.nextFood() }
         }.padding(.horizontal,20).padding(.vertical,8).foregroundStyle(.white)
             .background(LinearGradient(colors:[.black.opacity(0.82),.black.opacity(0.45),.clear],startPoint:.top,endPoint:.bottom))
             .environment(\.colorScheme,.dark)
@@ -106,13 +114,23 @@ struct NativeScanView: View {
             } else if let date = model.detectedDate {
                 Label("日付 \(date) · 商品を選んでください",systemImage:"calendar").font(.subheadline)
             }
-            HStack(alignment:.center) {
+            if model.expiryMode {
+                HStack {
+                    Button("撮影を終える") { model.endExpiry() }.frame(minHeight:44)
+                    Spacer()
+                    Button("期限を手入力") { if let food = model.candidate { model.endExpiry(); model.registrationForReview(); editing = food } }.frame(minHeight:44)
+                }.accessibilityIdentifier("expiryModeControls")
+            } else if model.capturedImage != nil, !model.aiBusy {
+                Button { model.nextFood(); if model.camera == nil { Task { await model.startCamera(store:store) } } } label: {
+                    Label("次を撮影する",systemImage:"camera").font(.headline).frame(maxWidth:.infinity,minHeight:52)
+                }.background(.white.opacity(0.14),in:Capsule()).accessibilityIdentifier("nextCapture")
+            } else { HStack(alignment:.center) {
                 PhotosPicker(selection:$selectedPhoto,matching:.images) { Image(systemName:"photo").font(.title2).frame(width:52,height:52).background(.white.opacity(0.14),in:Circle()) }
                     .accessibilityLabel("写真から読み取る").disabled(!model.aiReady || model.aiBusy || model.paused)
                 Spacer()
                 VStack(spacing:6) {
                     Button {
-                        if model.aiBusy { model.cancelAI(); model.resetScan(); model.scanMessage = "中止しています…" }
+                        if model.aiBusy { model.cancelAI(); model.scanMessage = "中止しています…" }
                         else { Task { await model.recognize(store:store) } }
                     } label: {
                         ZStack {
@@ -127,8 +145,8 @@ struct NativeScanView: View {
                 Spacer()
                 Button { model.pauseScan() } label: { Image(systemName:model.paused ? "play.fill":"pause.fill").font(.title2).frame(width:52,height:52).background(.white.opacity(0.14),in:Circle()) }
                     .accessibilityLabel(model.paused ? "読み取りを再開":"読み取りを一時停止").disabled(!model.cameraRunning || model.aiBusy)
-            }
-            if model.candidate == nil, !model.aiBusy {
+            } }
+            if model.candidate == nil, !model.aiBusy, model.capturedImage == nil, !model.expiryMode {
                 Button("次の食品・次の1個") { model.nextFood() }.font(.subheadline).frame(minHeight:44)
             }
         }.padding(.horizontal,20).padding(.top,18).padding(.bottom,8).foregroundStyle(.white)
@@ -144,9 +162,19 @@ struct NativeScanView: View {
             ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:8) {
                     chip(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit)":"数量を確認",icon:"number",food:food)
-                    chip(food.expiryDate.map { "\(FoodRules.expiryTypes[food.expiryType] ?? "日付") \($0)" } ?? "期限を映す・入力",icon:"calendar",food:food)
+                    if let date = food.expiryDate {
+                        chip("\(FoodRules.expiryTypes[food.expiryType] ?? "日付") \(date)",icon:"calendar",food:food)
+                    }
                     if let code = food.barcode { chip(String(code.hasPrefix("0") ? code.dropFirst():Substring(code)),icon:"barcode",food:food) }
                 }
+            }
+            if !model.expiryMode {
+                HStack(spacing:12) {
+                    Button { model.beginExpiry() } label: { Label(food.expiryDate == nil ? "期限を読み取る":"期限を再読取",systemImage:"viewfinder").frame(minHeight:44) }
+                        .disabled(!model.cameraRunning && !model.demo).accessibilityIdentifier("readExpiry")
+                    Spacer(minLength:0)
+                    Button("期限を手入力") { model.registrationForReview(); editing = food }.frame(minHeight:44)
+                }.font(.subheadline)
             }
             Button { model.registrationForReview(); editing = food } label: {
                 Label(model.scanMode == "consume" ? "確認して消費":"確認して登録",systemImage:"checkmark").font(.headline).frame(maxWidth:.infinity,minHeight:46)
@@ -164,14 +192,16 @@ struct NativeScanView: View {
 struct NativeCameraPreview: UIViewRepresentable {
     let camera: NativeCamera
     var marks: [ScanMark] = []
+    var expiryMode = false
     func makeUIView(context: Context) -> NativePreviewSurface { NativePreviewSurface(camera:camera) }
-    func updateUIView(_ view: NativePreviewSurface, context: Context) { view.marks = marks; view.setNeedsLayout() }
+    func updateUIView(_ view: NativePreviewSurface, context: Context) { view.marks = marks; view.expiryMode = expiryMode; view.setNeedsLayout() }
 }
 final class NativePreviewSurface: UIView {
     private let camera: NativeCamera, video: AVCaptureVideoPreviewLayer
     private let overlay = CALayer()
     private var expiryTimer: Timer?
     var marks: [ScanMark] = []
+    var expiryMode = false
     init(camera: NativeCamera) {
         self.camera = camera; video = camera.makePreviewLayer(); super.init(frame:.zero)
         layer.addSublayer(video); layer.addSublayer(overlay); clipsToBounds = true
@@ -191,10 +221,18 @@ final class NativePreviewSurface: UIView {
         defer { CATransaction.commit() }
         video.frame = bounds; overlay.frame = bounds
         if let connection = video.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
-        if bounds.width > 0, bounds.height > 0 { camera.updateVisibleRegion(video.metadataOutputRectConverted(fromLayerRect:bounds)) }
+        let expiryRect = CGRect(x:bounds.width*0.08,y:bounds.height*0.34,width:bounds.width*0.84,height:bounds.height*0.24)
+        if bounds.width > 0, bounds.height > 0 { camera.updateVisibleRegion(video.metadataOutputRectConverted(fromLayerRect:expiryMode ? expiryRect:bounds)) }
         overlay.sublayers?.forEach { $0.removeFromSuperlayer() }
+        if expiryMode {
+            let shade = CAShapeLayer(), path = UIBezierPath(rect:bounds)
+            path.append(UIBezierPath(roundedRect:expiryRect,cornerRadius:16)); shade.path = path.cgPath
+            shade.fillRule = .evenOdd; shade.fillColor = UIColor.black.withAlphaComponent(0.55).cgColor; overlay.addSublayer(shade)
+            let frame = CAShapeLayer(); frame.path = UIBezierPath(roundedRect:expiryRect,cornerRadius:16).cgPath
+            frame.strokeColor = UIColor.systemYellow.cgColor; frame.fillColor = UIColor.clear.cgColor; frame.lineWidth = 2; overlay.addSublayer(frame)
+        }
         let guideRect = camera.aiGuide()
-        if guideRect.width > 0 {
+        if guideRect.width > 0, !expiryMode {
             let guide = CAShapeLayer()
             guide.path = UIBezierPath(roundedRect:video.layerRectConverted(fromMetadataOutputRect:guideRect),cornerRadius:20).cgPath
             guide.strokeColor = UIColor.white.withAlphaComponent(0.65).cgColor; guide.fillColor = UIColor.clear.cgColor
