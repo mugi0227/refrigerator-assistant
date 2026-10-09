@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: fridge-ios-${{ github.ref }}
+  group: fridge-ios-${{ github.ref }}-${{ inputs.camera_only && 'camera' || 'full' }}
   cancel-in-progress: true
 jobs:
   build:
