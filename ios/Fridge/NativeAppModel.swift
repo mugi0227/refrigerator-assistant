@@ -5,13 +5,29 @@ import AudioToolbox
 
 struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [String], missing: [String], steps: [String] }
 @MainActor final class NativeAppModel: ObservableObject {
-    @Published var aiReady = false, aiBusy = false, loading = false, modelSaved = false
-    @Published var status = "AIを使わず、手入力・バーコード・印字の読み取りができます。", progress: Double?
-    @Published var camera: NativeCamera?, cameraRunning = false, paused = false, automaticAI = false
-    @Published var scanMessage = "商品と期限を順番に映してください。", candidate: Food?, pending: Food?, countdown = 0
-    @Published var scanMode = "add", location = "fridge", demo = false, needsReview = false
-    @Published var recipes: [Recipe] = [], recipeBusy = false, alert: String?
-    @Published var lastAnswer = "", lastSeconds = 0.0
+    @Published var aiReady = false
+    @Published var aiBusy = false
+    @Published var loading = false
+    @Published var modelSaved = false
+    @Published var status = "AIを使わず、手入力・バーコード・印字の読み取りができます。"
+    @Published var progress: Double?
+    @Published var camera: NativeCamera?
+    @Published var cameraRunning = false
+    @Published var paused = false
+    @Published var automaticAI = false
+    @Published var scanMessage = "商品と期限を順番に映してください。"
+    @Published var candidate: Food?
+    @Published var pending: Food?
+    @Published var countdown = 0
+    @Published var scanMode = "add"
+    @Published var location = "fridge"
+    @Published var demo = false
+    @Published var needsReview = false
+    @Published var recipes: [Recipe] = []
+    @Published var recipeBusy = false
+    @Published var alert: String?
+    @Published var lastAnswer = ""
+    @Published var lastSeconds = 0.0
     let ai = NativeAI(), models = ModelStore()
     private var loop: Task<Void,Never>?, registration: Task<Void,Never>?
     private var generation = UUID(), lockedKey: String?, dateVote: PrintedDate?, lastStamp = 0.0, foodVote: String?
@@ -27,7 +43,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     }
     func loadAI() async {
         guard !loading, !aiBusy else { return }
-        await stopCamera(); let token = generation; loading = true; aiReady = false; UIApplication.shared.isIdleTimerDisabled = true
+        loading = true; aiReady = false; await stopCamera(); let token = generation; UIApplication.shared.isIdleTimerDisabled = true
         defer { loading = false; progress = nil; modelSaved = models.saved; UIApplication.shared.isIdleTimerDisabled = false }
         do {
             let model = try await models.obtain(); progress = nil
@@ -54,10 +70,12 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     func startCamera(store: HouseholdStore) async {
         guard !cameraRunning, !loading else { return }
         resetScan(); demo = false; paused = false; location = store.state.settings.location
-        let value = NativeCamera(); camera = value
+        let value = NativeCamera(); camera = value; let token = generation
         value.onCodes = { [weak self, weak store] codes in Task { @MainActor in guard let self, let store else { return }; self.codes(codes,store:store) } }
         do {
-            try await value.start(); cameraRunning = true; UIApplication.shared.isIdleTimerDisabled = true
+            try await value.start()
+            guard token == generation else { await value.stop(); return }
+            cameraRunning = true; UIApplication.shared.isIdleTimerDisabled = true
             value.updateVisibleRegion(CGRect(x:0,y:0,width:1,height:1))
             scanMessage = "バーコードを映してください。野菜はAIで読み取れます。"
             loop = Task { [weak self, weak store] in
@@ -146,7 +164,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
             guard foodVote == vote else { foodVote = vote; scanMessage = "\(food.name)：もう一度確認します。"; return }
             if food.kind == "packaged", scanMode == "add" { needsReview = true; scanMessage = "商品名と期限を確認してください。" }
             else { stage(food,store:store) }
-        } catch { scanMessage = error.localizedDescription; automaticAI = false }
+        } catch { scanMessage = error.localizedDescription; automaticAI = false; aiReady = await ai.isReady() }
     }
     func stage(_ food: Food, store: HouseholdStore) {
         guard pending == nil, lockedKey != key(food), !paused else { return }

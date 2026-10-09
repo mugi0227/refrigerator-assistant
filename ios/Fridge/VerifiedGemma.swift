@@ -13,4 +13,3 @@ enum VerifiedGemma {
             visualTokenBudget: 280, enableBenchmark: true, backend: backend)
     }
 }
-

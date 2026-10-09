@@ -39,7 +39,8 @@ enum FoodRules {
     static func dateFromLabel(_ raw: String) -> String? {
         let text = raw.precomposedStringWithCompatibilityMapping
         let regex = try! NSRegularExpression(pattern:"(?:^|[^0-9])(20[0-9]{2}|[0-9]{2})\\s*[年./-]\\s*([0-9]{1,2})\\s*[月./-]\\s*([0-9]{1,2})(?:日|\\b)")
-        guard let m = regex.firstMatch(in:text,range:NSRange(text.startIndex...,in:text)) else { return nil }
+        let matches = regex.matches(in:text,range:NSRange(text.startIndex...,in:text))
+        guard matches.count == 1, let m = matches.first else { return nil }
         let ns = text as NSString, y = ns.substring(with:m.range(at:1))
         let value = String(format:"%04d-%02d-%02d",Int(y)! + (y.count == 2 ? 2000:0),Int(ns.substring(with:m.range(at:2)))!,Int(ns.substring(with:m.range(at:3)))!)
         return validDate(value) ? value:nil

@@ -5,8 +5,10 @@ import LiteRTFoundation
 final class NativeChatCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var chat: LiteRTChat?
+    private var cancelled = false
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
     func set(_ value: LiteRTChat?) { lock.lock(); chat = value; lock.unlock() }
-    func cancel() { lock.lock(); let value = chat; lock.unlock(); try? value?.cancel() }
+    func cancel() { lock.lock(); cancelled = true; let value = chat; lock.unlock(); try? value?.cancel() }
 }
 
 // Uses precisely the public API that passed on the physical device. No copied
@@ -17,6 +19,7 @@ actor NativeAI {
     nonisolated let cancellation = NativeChatCancellation()
     private var capture: ProbeStderr?
     private var journal: FileHandle?
+    func isReady() -> Bool { chat != nil }
     func note(_ value: String) {
         let line = "\(ISO8601DateFormatter().string(from:Date())) \(value) | footprint=\(LiteRTChat.memoryFootprintBytes())\n"
         try? journal?.write(contentsOf:Data(line.utf8)); try? journal?.synchronize()
@@ -57,7 +60,7 @@ actor NativeAI {
         busy = true; defer { busy = false }; turns += 1
         note("request \(turns), image=\(image != nil)")
         do { let result = try await stream(chat,prompt,image:image); note("response \(result)"); return result }
-        catch { note("ERROR \(error.localizedDescription)"); throw error }
+        catch { note("ERROR \(error.localizedDescription)"); cancellation.set(nil); self.chat = nil; throw error }
     }
     private func stream(_ current: LiteRTChat, _ prompt: String, image: Data?) async throws -> String {
         let holder = NativeChatCancellation(); holder.set(current)
@@ -69,6 +72,8 @@ actor NativeAI {
             try Task.checkCancellation(); result += token
             guard result.utf8.count <= 24000 else { try? current.cancel(); throw FridgeError.message("回答が長すぎるため中止しました。AIを再起動してください。") }
         }
+        try Task.checkCancellation()
+        if holder.isCancelled { throw FridgeError.message("AIの応答が90秒以内に終わらなかったため中止しました。設定から再起動してください。") }
         return result
     }
     func unload() throws {

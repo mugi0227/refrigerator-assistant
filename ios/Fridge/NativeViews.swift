@@ -29,8 +29,11 @@ struct NativeRootView: View {
 struct InventoryView: View {
     @EnvironmentObject private var store: HouseholdStore
     @EnvironmentObject private var model: NativeAppModel
-    @State private var search = "", location = "all"
-    @State private var editing: Food?, consuming: Food?, amount = "1"
+    @State private var search = ""
+    @State private var location = "all"
+    @State private var editing: Food?
+    @State private var consuming: Food?
+    @State private var amount = "1"
     private var foods: [Food] {
         store.active.filter { food in
             (search.isEmpty || food.name.localizedCaseInsensitiveContains(search)) &&
@@ -124,7 +127,8 @@ struct FoodEditor: View {
 struct ShoppingView: View {
     @EnvironmentObject private var store: HouseholdStore
     @EnvironmentObject private var model: NativeAppModel
-    @State private var name = "", staple: Staple?
+    @State private var name = ""
+    @State private var staple: Staple?
     var body: some View {
         NavigationStack {
             List {
@@ -179,7 +183,8 @@ struct StapleEditor: View {
 struct NativeScanView: View {
     @EnvironmentObject private var model: NativeAppModel
     @EnvironmentObject private var store: HouseholdStore
-    @State private var editing: Food?, selectedPhoto: PhotosPickerItem?
+    @State private var editing: Food?
+    @State private var selectedPhoto: PhotosPickerItem?
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -301,7 +306,12 @@ struct JSONBackup: FileDocument {
 struct NativeSettingsView: View {
     @EnvironmentObject private var model: NativeAppModel
     @EnvironmentObject private var store: HouseholdStore
-    @State private var importing = false, modelImport = false, exporting = false, backup = JSONBackup(data:Data()), restoreData: Data?, restoreConfirm = false
+    @State private var importing = false
+    @State private var modelImport = false
+    @State private var exporting = false
+    @State private var backup = JSONBackup(data:Data())
+    @State private var restoreData: Data?
+    @State private var restoreConfirm = false
     @State private var logURL: URL?
     private func setting<T>(_ path: WritableKeyPath<HouseholdSettings,T>) -> Binding<T> {
         Binding(get:{store.state.settings[keyPath:path]},set:{ value in do { try store.update { $0.settings[keyPath:path] = value } } catch { model.alert = error.localizedDescription } })

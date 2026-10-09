@@ -18,6 +18,8 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
         if not isinstance(value, str) or not value.strip() or not value.isascii():
             raise SystemExit(f"{key} must be non-empty ASCII for AltServer App ID registration")
     app = app_infos[0].removesuffix("Info.plist")
+    if any(name.startswith(app + "Web/") or name.endswith("/index.html") for name in archive.namelist()):
+        raise SystemExit("Native iOS IPA unexpectedly includes the old Web UI")
     if app + info["CFBundleExecutable"] not in archive.namelist():
         raise SystemExit("IPA executable is missing")
     print(f'Validated AltStore IPA: {info["CFBundleDisplayName"]} '

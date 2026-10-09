@@ -1,20 +1,13 @@
-import {mkdirSync,readdirSync,readFileSync,writeFileSync,copyFileSync} from 'node:fs';
-import {resolve,dirname} from 'node:path';
+import {readFileSync, existsSync} from 'node:fs';
+import {resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {promptFor} from '../public/vision.js';
-const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),out=resolve(root,'ios/Fridge/Resources/Web');
-mkdirSync(out,{recursive:true});
-writeFileSync(resolve(out,'scanner-prompt.txt'),promptFor(null));
-for(const name of readdirSync(resolve(root,'public'))){if(['_headers','sw.js','manifest.webmanifest','barcode-worker.js','vendor'].includes(name)||name.startsWith('siglip'))continue;copyFileSync(resolve(root,'public',name),resolve(out,name));}
-const index=resolve(out,'index.html');let html=readFileSync(index,'utf8');
-const version=readFileSync(resolve(root,'ios/project.yml'),'utf8').match(/MARKETING_VERSION:\s*([\d.]+)/)?.[1];
-if(!version)throw new Error('Missing iOS app version');
-writeFileSync(resolve(out,'native-version.js'),`globalThis.fridgeAppVersion=${JSON.stringify(version)};\n`);
-html=html.replace('</head>','<script src="./native-version.js"></script></head>');
-html=html.replace('<video id="camera" playsinline muted autoplay></video>','<img id="camera" alt="背面カメラの映像">');
-html=html.replace('<link rel="manifest" href="./manifest.webmanifest">','');
-html=html.replace('<meta charset="UTF-8">','<meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\' fridge:; script-src \'self\' fridge:; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; connect-src https://world.openfoodfacts.org; object-src \'none\'; base-uri \'self\'; form-action \'self\'">');
-writeFileSync(index,html);
-const css=resolve(out,'styles.css');writeFileSync(css,readFileSync(css,'utf8')+'\n#camera{width:100%;height:100%;object-fit:cover;}\n.app-shell{padding-top:env(safe-area-inset-top);}\n:root.native-camera-preview{background:transparent;}\n.native-camera-preview .camera-stage{background:transparent;}\n.native-camera-preview #camera{opacity:0;}\n');
-console.log('Prepared bundled iOS UI (native camera and AI; no model weights included)');
-writeFileSync(css,readFileSync(css,'utf8')+'\n.camera-focus-point{position:absolute;z-index:4;width:44px;height:44px;border:2px solid #c7dc97;border-radius:9px;transform:translate(-50%,-50%);box-shadow:0 0 0 1px #243b3240;pointer-events:none;}\n.camera-focus-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:600px;margin:8px auto 0;font-size:11px;color:#68776c;}\n.camera-focus-controls button{font-size:12px;white-space:nowrap;}\n');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const app = readFileSync(resolve(root, 'ios/Fridge/FridgeApp.swift'), 'utf8');
+const project = readFileSync(resolve(root, 'ios/project.yml'), 'utf8');
+if (!app.includes('NativeRootView()') || project.includes('Fridge/Resources/Web')) {
+  throw new Error('iOS must use the native root without bundled Web resources');
+}
+if (!existsSync(resolve(root, 'ios/Fridge/Resources/Probe/apple.png'))) {
+  throw new Error('Missing reference image for native AI startup validation');
+}
+console.log('Validated native SwiftUI app and reference image; no Web UI is bundled.');
