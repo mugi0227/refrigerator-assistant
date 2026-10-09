@@ -4,6 +4,7 @@ export GIT_LFS_SKIP_SMUDGE=1
 cd "$(dirname "$0")/.."
 mkdir -p local/native-runtime-fixture ios/FridgeRuntimeTests/Fixtures
 MODEL_PATH="$PWD/local/native-runtime-fixture/gemma-4-E2B-it.litertlm"
+if [ "${FRIDGE_CAMERA_ONLY:-0}" != "1" ]; then
 MODEL_URL=$(python3 -c 'import re; print(re.search(r"https://huggingface[^\"]+",open("ios/Fridge/ModelStore.swift").read()).group())')
 if [ ! -f "$MODEL_PATH" ]; then
   curl --fail --location --retry 2 --connect-timeout 30 --max-time 900 "$MODEL_URL" -o "$MODEL_PATH.partial"
@@ -18,6 +19,7 @@ assert p.stat().st_size==expected, 'Incomplete real model fixture'
 print('Actual model fixture:',p.stat().st_size,'bytes; SHA256:',hashlib.file_digest(p.open('rb'),'sha256').hexdigest())
 Path('ios/FridgeRuntimeTests/Fixtures/config.json').write_text(json.dumps({'modelPath':str(p)}))
 PY
+fi
 node scripts/prepare-ios.mjs
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
@@ -50,6 +52,15 @@ PY
   done
 }
 trap collect_results EXIT
+if [ "${FRIDGE_CAMERA_ONLY:-0}" = "1" ]; then
+  xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
+    -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
+    -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+    -parallel-testing-enabled NO -test-timeouts-enabled YES \
+    -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 240 \
+    -only-testing:FridgeRuntimeTests/CameraProcessingTests -only-testing:FridgeRuntimeTests/NativeDomainTests "$@" test
+  exit $?
+fi
 # Keep the production engine's complete food -> recovery -> recipes sequence in
 # one process. The unmodified upstream control gets a fresh test-host process;
 # native model teardown/reinitialization is a known unresolved runtime condition.

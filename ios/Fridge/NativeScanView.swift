@@ -41,6 +41,8 @@ struct NativeScanView: View {
                 ScrollView {
                     VStack(alignment:.leading,spacing:20) {
                         Text(model.scanMessage).textSelection(.enabled)
+                        Text("印字の読み取り").font(.headline)
+                        Text(model.printedDetail).font(.callout).textSelection(.enabled)
                         Text(String(format:"直前のAI処理 %.2f秒",model.lastSeconds))
                         Text(model.lastAnswer).font(.callout).textSelection(.enabled)
                         Text("緑の枠はバーコード、黄色の枠は期限に関係する文字です。AIで読む食品は中央の白い点線の内側に映してください。映像をタップするとピントが合います。候補は確認して保存するまで在庫に入りません。")

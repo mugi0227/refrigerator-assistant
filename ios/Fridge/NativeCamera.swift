@@ -23,7 +23,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private var device: AVCaptureDevice?
     private var videoOutput: AVCaptureVideoDataOutput?
     private var metadataOutput: AVCaptureMetadataOutput?
-    private var barcodeRegion = CGRect(x: 0, y: 0, width: 1, height: 1)
+    private var visibleMetadataRegion = CGRect(x: 0, y: 0, width: 1, height: 1)
     private var lastFrame: TimeInterval = 0
     private var lastFallback: TimeInterval = 0
     private var lastMetadata: TimeInterval = 0
@@ -143,11 +143,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return }
             self.metadataOutput?.rectOfInterest = clipped
             self.regionConfigured = true
-            if let video = self.videoOutput {
-                let r = video.outputRectConverted(fromMetadataOutputRect: clipped)
-                // Vision uses a bottom-left origin; AVFoundation uses top-left.
-                self.barcodeRegion = CGRect(x: r.minX, y: 1 - r.maxY, width: r.width, height: r.height)
-            }
+            self.visibleMetadataRegion = clipped
         }
     }
     func stop() async {
@@ -182,6 +178,7 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     }
     func readText() async throws -> [String: Any] {
         let (pixels, region, capturedAt) = try textSnapshot()
+        let frameSize = CGSize(width:CGFloat(CVPixelBufferGetWidth(pixels)),height:CGFloat(CVPixelBufferGetHeight(pixels)))
         // Keep only the latest HD frame and one in-flight request. Recognition
         // runs away from the capture queue so preview and focus stay responsive.
         return try await withCheckedThrowingContinuation { promise in
@@ -195,13 +192,15 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                             if let x = row["x"] as? Double, let y = row["y"] as? Double,
                                let w = row["width"] as? Double, let h = row["height"] as? Double,
                                let video = self.videoOutput {
-                                let r = video.metadataOutputRectConverted(fromOutputRect:CGRect(x:x,y:1-y-h,width:w,height:h))
+                                let outputRect = CameraCoordinates.outputPixels(fromVision:CGRect(x:x,y:y,width:w,height:h),size:frameSize)
+                                let r = video.metadataOutputRectConverted(fromOutputRect:outputRect)
                                 row["metadataX"] = Double(r.minX); row["metadataY"] = Double(r.minY)
                                 row["metadataWidth"] = Double(r.width); row["metadataHeight"] = Double(r.height)
                             }
                             return row
                         }
-                        promise.resume(returning: ["lines": mapped, "capturedAt": capturedAt * 1000])
+                        promise.resume(returning: ["lines": mapped, "capturedAt": capturedAt * 1000,
+                            "region":NSStringFromCGRect(region),"frameSize":NSStringFromCGSize(frameSize)])
                     }
                 } catch { promise.resume(throwing: error) }
             }
@@ -230,13 +229,18 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         let now = Date().timeIntervalSince1970
         guard session.isRunning, now - lastFrame >= 0.5, let pixels = CMSampleBufferGetImageBuffer(buffer) else { return }
         lastFrame = now
+        let frameSize = CGSize(width:CGFloat(CVPixelBufferGetWidth(pixels)),height:CGFloat(CVPixelBufferGetHeight(pixels)))
+        // AVCaptureOutput converts metadata coordinates to PIXELS, not 0...1.
+        // Normalize using this rotated sample's dimensions before passing to Vision.
+        let outputRegion = videoOutput?.outputRectConverted(fromMetadataOutputRect:visibleMetadataRegion) ?? .zero
+        let barcodeRegion = regionConfigured ? CameraCoordinates.visionRect(fromOutputPixels:outputRegion,size:frameSize):.zero
         lock.lock(); latestPixels = pixels; latestCapturedAt = now
         latestTextRegion = regionConfigured ? barcodeRegion : .zero; lock.unlock()
         autoreleasepool {
             let image = CIImage(cvPixelBuffer: pixels)
             let b = image.extent, side = min(b.width,b.height)*0.8
             if let video = videoOutput, b.width > 0, b.height > 0 {
-                let r = CGRect(x:(b.width-side)/2/b.width,y:(b.height-side)/2/b.height,width:side/b.width,height:side/b.height)
+                let r = CGRect(x:(b.width-side)/2,y:(b.height-side)/2,width:side,height:side)
                 let guide = video.metadataOutputRectConverted(fromOutputRect:r)
                 lock.lock(); latestAIGuide = guide; lock.unlock()
             }
@@ -249,7 +253,8 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                         var row = row
                         if let x = Double(row["x"] ?? ""), let y = Double(row["y"] ?? ""),
                            let w = Double(row["width"] ?? ""), let h = Double(row["height"] ?? ""), let video = self.videoOutput {
-                            let r = video.metadataOutputRectConverted(fromOutputRect:CGRect(x:x,y:1-y-h,width:w,height:h))
+                            let outputRect = CameraCoordinates.outputPixels(fromVision:CGRect(x:x,y:y,width:w,height:h),size:frameSize)
+                            let r = video.metadataOutputRectConverted(fromOutputRect:outputRect)
                             row["x"] = String(Double(r.minX)); row["y"] = String(Double(r.minY))
                             row["width"] = String(Double(r.width)); row["height"] = String(Double(r.height))
                         }

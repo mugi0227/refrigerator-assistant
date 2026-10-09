@@ -4,6 +4,45 @@ import CoreImage
 @testable import Fridge
 
 final class CameraProcessingTests: XCTestCase {
+    func testOutputPixelCoordinatesAreNormalizedBeforeVision() {
+        let size = CGSize(width:1080,height:1920)
+        let pixels = CGRect(x:135,y:180,width:810,height:1440)
+        let roi = CameraCoordinates.visionRect(fromOutputPixels:pixels,size:size)
+        XCTAssertEqual(roi.minX,0.125,accuracy:0.00001)
+        XCTAssertEqual(roi.minY,0.15625,accuracy:0.00001)
+        XCTAssertEqual(roi.width,0.75,accuracy:0.00001)
+        XCTAssertEqual(roi.height,0.75,accuracy:0.00001)
+        XCTAssertEqual(CameraCoordinates.outputPixels(fromVision:roi,size:size),pixels)
+        XCTAssertEqual(CameraCoordinates.visionRect(fromOutputPixels:CGRect(origin:.zero,size:size),size:size),CGRect(x:0,y:0,width:1,height:1))
+        let text = CameraCoordinates.outputPixels(fromVision:CGRect(x:0.1,y:0.7,width:0.5,height:0.03),size:size)
+        XCTAssertEqual(text.minX,108,accuracy:0.01)
+        XCTAssertEqual(text.minY,518.4,accuracy:0.01)
+        XCTAssertEqual(text.width,540,accuracy:0.01)
+        XCTAssertEqual(text.height,57.6,accuracy:0.01)
+        XCTAssertEqual(CameraCoordinates.visionRect(fromOutputPixels:pixels,size:.zero),.zero)
+    }
+    @MainActor func testPrivateDotPrintedExpiryWhenProvided() throws {
+        // Supplied through an ephemeral CI secret, never committed or attached.
+        guard let url = Bundle(for:Self.self).url(forResource:"private-expiry",withExtension:"jpg") else {
+            throw XCTSkip("Private physical label fixture was not supplied")
+        }
+        let image = try XCTUnwrap(CIImage(contentsOf:url))
+        let roi = CameraCoordinates.visionRect(fromOutputPixels:image.extent,size:image.extent.size)
+        let lines = try CameraTextReader.recognize(image,region:roi)
+        print("PRIVATE_LABEL_OCR: \(lines)")
+        let date = try XCTUnwrap(NativeReading.printed(lines))
+        XCTAssertEqual(date.date,"2027-02-01")
+        XCTAssertEqual(date.type,"best_before")
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:path) }
+        let model = NativeAppModel(), store = HouseholdStore(file:path)
+        model.cameraRunning = true
+        model.codes([["text":"4901330578909"]],store:store)
+        model.acceptPrinted(lines,stamp:1); model.acceptPrinted(lines,stamp:2)
+        XCTAssertEqual(model.candidate?.expiryDate,"2027-02-01")
+        XCTAssertEqual(model.candidate?.expiryType,"best_before")
+        XCTAssertTrue(store.active.isEmpty)
+    }
     func testPrintedExpiryRecognitionUsesHDFrameAndVisibleRegion() async throws {
         let png = await MainActor.run {
             let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -18,12 +57,14 @@ final class CameraProcessingTests: XCTestCase {
         let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
         attachment.name = "HD printed Japanese expiry"; attachment.lifetime = .keepAlways; add(attachment)
         let image = try XCTUnwrap(CIImage(data: png))
-        let lines = try CameraTextReader.recognize(image)
+        let roi = CameraCoordinates.visionRect(fromOutputPixels:CGRect(x:0,y:0,width:1080,height:1920),size:CGSize(width:1080,height:1920))
+        let lines = try CameraTextReader.recognize(image,region:roi)
         let text = lines.compactMap { $0["text"] as? String }.joined(separator: " | ")
         XCTAssertTrue(text.contains("賞味期限"), text); XCTAssertTrue(text.contains("2026.10.31"), text)
         XCTAssertTrue(text.contains("製造年月日"), text); XCTAssertTrue(text.contains("2026.09.01"), text)
         XCTAssertTrue(lines.allSatisfy { ($0["confidence"] as? Double ?? 0) > 0 && $0["x"] is Double })
-        let bottom = try CameraTextReader.recognize(image, region: CGRect(x: 0, y: 0, width: 1, height: 0.4))
+        let bottomROI = CameraCoordinates.visionRect(fromOutputPixels:CGRect(x:0,y:1152,width:1080,height:768),size:CGSize(width:1080,height:1920))
+        let bottom = try CameraTextReader.recognize(image, region: bottomROI)
         XCTAssertFalse(bottom.compactMap { $0["text"] as? String }.joined().contains("2026.10.31"))
         print("FRIDGE_CAMERA_OCR: \(text); high-resolution input and visible ROI verified")
     }

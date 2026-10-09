@@ -30,6 +30,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
     @Published var lastSeconds = 0.0
     @Published var marks: [ScanMark] = []
     @Published var detectedDate: String?
+    @Published var printedDetail = "印字はまだ読み取っていません。"
     let ai = NativeAI(), models = ModelStore()
     private var loop: Task<Void,Never>?, registration: Task<Void,Never>?
     private var generation = UUID(), lockedKey: String?, dateVote: PrintedDate?, lastStamp = 0.0, foodVote: String?
@@ -71,6 +72,7 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         generation = UUID(); productLookup?.cancel(); productLookup = nil; registration?.cancel(); registration = nil
         pending = nil; candidate = nil; countdown = 0; lockedKey = nil; dateVote = nil; foodVote = nil; lastStamp = 0; needsReview = false
         marks = []; detectedDate = nil; lastAnswer = ""; lastSeconds = 0
+        printedDetail = "印字はまだ読み取っていません。"
     }
     func pauseScan() { paused.toggle(); generation = UUID(); registration?.cancel(); pending = nil; countdown = 0; dateVote = nil; foodVote = nil; productLookup?.cancel(); scanMessage = paused ? "一時停止中":"読み取りを再開しました。" }
     func registrationForReview() { registration?.cancel(); pending = nil; countdown = 0; paused = true; generation = UUID(); dateVote = nil; foodVote = nil; productLookup?.cancel() }
@@ -148,9 +150,15 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
         do {
             let frame = try await camera.readText()
             guard token == generation, cameraRunning, !paused, let stamp = frame["capturedAt"] as? Double, stamp > lastStamp else { return }
-            acceptPrinted(frame["lines"] as? [[String:Any]] ?? [],stamp:stamp)
+            let lines = frame["lines"] as? [[String:Any]] ?? []
+            let raw = lines.compactMap { $0["text"] as? String }.joined(separator:"\n")
+            printedDetail = "\(lines.count)行の文字を検出\n\(raw)\n映像: \(frame["frameSize"] ?? "")\n読取範囲: \(frame["region"] ?? "")"
+            acceptPrinted(lines,stamp:stamp)
         } catch {
-            if token == generation, candidate?.barcode != nil { scanMessage = "印字を探しています。期限に近づけ、画面をタップしてピントを合わせてください。" }
+            if token == generation {
+                printedDetail = error.localizedDescription
+                if candidate?.barcode != nil { scanMessage = "印字を探しています。期限に近づけ、画面をタップしてピントを合わせてください。" }
+            }
         }
     }
     func acceptPrinted(_ lines: [[String:Any]], stamp: Double) {
@@ -160,6 +168,8 @@ struct Recipe: Identifiable { let id = UUID(); var name: String, ingredients: [S
             dateVote = nil; detectedDate = nil
             if candidate?.expiryDate == nil, marks.contains(where: { $0.isDate }) {
                 scanMessage = "印字を検出しました。年・月・日を一緒に映すか、候補の期限をタップして入力してください。"
+            } else if candidate?.barcode != nil, candidate?.expiryDate == nil {
+                scanMessage = lines.isEmpty ? "期限の文字を探しています。印字全体を映し、タップでピントを合わせてください。":"文字を検出しました。期限の日付をもう少し近くに映してください。"
             }
             return
         }

@@ -17,3 +17,4 @@ ios/Fridge/Resources/Web/
 ios/Fridge.xcodeproj/
 ios/build-runtime/
 ios/FridgeRuntimeTests/Fixtures/config.json
+ios/FridgeRuntimeTests/Fixtures/private-expiry.jpg

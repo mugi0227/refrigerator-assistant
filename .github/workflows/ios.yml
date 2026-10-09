@@ -4,6 +4,11 @@ on:
     branches: [codex/ios-altstore]
     paths: ['ios/**', 'public/**', 'scripts/**', '.github/workflows/ios.yml']
   workflow_dispatch:
+    inputs:
+      camera_only:
+        description: 'Run camera, OCR, inventory and UI regression tests (AI code unchanged)'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -18,13 +23,25 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare optional private label regression fixture
+        env:
+          FRIDGE_PRIVATE_LABEL: ${{ secrets.FRIDGE_OCR_FIXTURE_20261009 }}
+        run: |
+          python3 - <<'PY'
+          import os,base64
+          from pathlib import Path
+          if value := os.environ.get('FRIDGE_PRIVATE_LABEL'):
+              Path('ios/FridgeRuntimeTests/Fixtures/private-expiry.jpg').write_bytes(base64.b64decode(value))
+          PY
       - name: Build unsigned iPhone IPA
         id: device
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
       - name: Check inventory persistence on iOS Simulator
         run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
-      - name: Check actual Gemma text and JPEG inference
+      - name: Check native runtime regression tests
         if: ${{ !cancelled() && steps.device.outcome == 'success' }}
+        env:
+          FRIDGE_CAMERA_ONLY: ${{ inputs.camera_only && '1' || '0' }}
         run: bash scripts/test-ios-runtime.sh 2>&1 | tee runtime-test.log
       - name: Save AltStore IPA
         uses: actions/upload-artifact@v4
