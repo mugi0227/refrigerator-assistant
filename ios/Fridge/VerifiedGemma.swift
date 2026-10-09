@@ -5,7 +5,9 @@ import LiteRTFoundation
 enum VerifiedGemma {
     static func make(_ model: URL) async throws -> LiteRTChat {
         #if targetEnvironment(simulator)
-        let backend: Backend = .cpu(threadCount: 4)
+        // Avoid oversubscribing the hosted ARM simulator's CPU. This branch
+        // never changes the physical iPhone's verified Metal configuration.
+        let backend: Backend = .cpu(threadCount: 1)
         #else
         let backend: Backend = .gpu
         #endif
