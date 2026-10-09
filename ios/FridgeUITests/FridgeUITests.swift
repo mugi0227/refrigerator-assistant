@@ -3,20 +3,44 @@ final class FridgeUITests: XCTestCase {
     func testNativePersistenceAndNoWebView() {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launch()
-        XCTAssertTrue(app.buttons["＋ 手入力"].waitForExistence(timeout:20)); XCTAssertEqual(app.webViews.count,0)
-        app.buttons["＋ 手入力"].tap()
+        let add = app.buttons["addFood"]
+        XCTAssertTrue(add.waitForExistence(timeout:20)); XCTAssertEqual(app.webViews.count,0)
+        // One-tap presets put real foods on the shelves, so the screenshots show the fridge as people see it.
+        for (index,preset) in ["牛乳","卵","トマト"].enumerated() {
+            add.tap()
+            let button = app.buttons["preset-\(preset)"]; XCTAssertTrue(button.waitForExistence(timeout:5))
+            if index == 0 { snapshot(app,"Add sheet with presets") }
+            button.tap()
+            if index == 2 { snapshot(app,"Add sheet after tapping a preset") }
+            app.buttons["saveFoodToolbar"].tap()
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format:"label BEGINSWITH %@",preset)).firstMatch.waitForExistence(timeout:5))
+        }
+        add.tap()
         let name = app.textFields["foodName"]; XCTAssertTrue(name.waitForExistence(timeout:5)); name.tap(); name.typeText("native-persistence-probe")
         app.buttons["saveFoodToolbar"].tap()
-        XCTAssertTrue(app.staticTexts["native-persistence-probe"].firstMatch.waitForExistence(timeout:10))
-        app.terminate(); app.launch(); XCTAssertTrue(app.staticTexts["native-persistence-probe"].firstMatch.waitForExistence(timeout:10))
+        let probe = app.buttons.matching(NSPredicate(format:"label CONTAINS %@","native-persistence-probe")).firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout:10))
+        snapshot(app,"Fridge shelves")
+        probe.tap()
+        XCTAssertTrue(app.buttons["consumeOne"].waitForExistence(timeout:5))
+        snapshot(app,"Food detail sheet")
+        app.buttons["consumeOne"].tap()
+        XCTAssertTrue(app.buttons["undoToast"].waitForExistence(timeout:5))
+        app.buttons["undoToast"].tap()
+        XCTAssertTrue(probe.waitForExistence(timeout:5))
+        app.terminate(); app.launch(); XCTAssertTrue(probe.waitForExistence(timeout:10))
         for tab in ["買い物","スキャン","献立","設定"] {
             app.tabBars.buttons[tab].tap(); XCTAssertEqual(app.webViews.count,0)
-            let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = "Native \(tab)"; shot.lifetime = .keepAlways; add(shot)
+            snapshot(app,"Native \(tab)")
         }
-        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.5 · ネイティブ版"].exists)
+        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.6 · ネイティブ版"].exists)
         app.tabBars.buttons["買い物"].tap(); app.textFields["買うもの"].tap(); app.textFields["買うもの"].typeText("bread"); app.buttons["追加"].tap()
         XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
+        snapshot(app,"Shopping with memo")
         app.terminate(); app.launch(); app.tabBars.buttons["買い物"].tap(); XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
+    }
+    private func snapshot(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot:app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
     }
     func testScannerCandidateRequiresConfirmation() {
         let app = XCUIApplication(); app.launch(); app.tabBars.buttons["スキャン"].tap()

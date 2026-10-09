@@ -1,0 +1,12 @@
+{
+  "images": [
+    {
+      "filename": "food-chocolate.png",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

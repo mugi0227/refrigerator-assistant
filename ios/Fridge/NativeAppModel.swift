@@ -149,6 +149,11 @@ struct ScanNotice { let title: String, message: String, icon: String }
             lastAnswer = await ai.rawOutput(); scanDebug = "AI処理エラー：\(error.localizedDescription)"; aiReady = await ai.isReady()
         }
     }
+    /// One button for the person: fast on-device text recognition first, Gemma only when that finds no expiry.
+    func readExpiryAuto() async {
+        await readExpiryStill()
+        if aiExpiryProposal == nil, aiReady, expiryMode { await recognizeExpiry() }
+    }
     func applyAIExpiry() {
         guard !aiBusy, expiryMode, let proposal = aiExpiryProposal, candidate != nil else { return }
         candidate?.expiryDate = proposal.date; candidate?.expiryType = proposal.type; needsReview = true

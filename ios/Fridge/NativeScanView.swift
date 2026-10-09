@@ -29,8 +29,8 @@ struct NativeScanView: View {
             } else {
                 VStack(spacing:16) {
                     Image(systemName:"viewfinder").font(.system(size:52))
-                    Text(model.demo ? "操作デモ":"食品を、ひとつずつ。").font(.title2.bold())
-                    Text(model.demo ? "候補を確認しても在庫には保存しません":"バーコードと期限は自動で検出\n野菜・果物は中央のボタンで読み取り")
+                    Text(model.demo ? "操作デモ":"カメラ").font(.title2.bold())
+                    Text(model.demo ? "候補を確認しても在庫には保存しません":"バーコードと期限は自動で読み取ります")
                         .font(.subheadline).multilineTextAlignment(.center)
                     if !model.demo {
                         Button("カメラをはじめる") { Task { await model.startCamera(store:store) } }
@@ -103,14 +103,14 @@ struct NativeScanView: View {
             HStack {
                 VStack(alignment:.leading,spacing:2) {
                     Text(model.expiryMode ? "期限を読み取る":model.capturedImage != nil ? "写真を確認":"スキャン").font(.headline)
-                    Text(model.demo ? "デモ · 保存しません":model.expiryMode ? "枠内を自動で読み取り":model.capturedImage != nil ? "この写真だけをAIが読み取ります":"自動検出 · 手動で登録").font(.caption)
+                    if model.demo { Text("デモ · 保存しません").font(.caption) }
                 }
                 Spacer()
                 Menu {
                     Picker("保存場所",selection:$model.location) { Text("冷蔵").tag("fridge"); Text("冷凍").tag("freezer"); Text("常温").tag("pantry") }
                 } label: { Label(FoodRules.locations[model.location] ?? "冷蔵",systemImage:"refrigerator").font(.subheadline).frame(minHeight:44) }
                 Menu {
-                    Button("手入力",systemImage:"square.and.pencil") { model.nextFood(); model.registrationForReview(); var food = Food(); food.location = model.location; editing = food }
+                    Button("手入力",systemImage:"square.and.pencil") { manualEntry() }
                     Button("読み取りの詳細",systemImage:"info.circle") { details = true }
                     if model.cameraRunning {
                         Button("カメラを終了",systemImage:"stop.circle") { Task { await model.stopCamera() } }
@@ -151,14 +151,10 @@ struct NativeScanView: View {
                 if model.aiBusy {
                     Button("AI読み取りを中止") { model.cancelAI(); model.scanMessage = "中止しています…" }.frame(minHeight:44)
                 } else {
-                    HStack {
-                        Button { Task { await model.readExpiryStill() } } label: {
-                            Label(model.expiryPhotoData == nil ? "撮影して文字読取":"写真を文字読取",systemImage:"text.viewfinder").frame(maxWidth:.infinity,minHeight:48)
-                        }.accessibilityIdentifier("stillOCR")
-                        Button { Task { await model.recognizeExpiry() } } label: {
-                            Label(model.aiReady ? "AIで期限を読む":model.loading ? "AI起動中…":"AIは設定で準備",systemImage:"sparkles").frame(maxWidth:.infinity,minHeight:48)
-                        }.disabled(!model.aiReady || model.paused).accessibilityIdentifier("aiExpiryShutter")
-                    }.font(.subheadline).background(.white.opacity(0.14),in:RoundedRectangle(cornerRadius:16))
+                    // One read button: on-device text recognition first, Gemma only when that finds nothing.
+                    Button { Task { await model.readExpiryAuto() } } label: {
+                        Label(model.expiryPhotoData == nil ? "撮影して読み取る":"この写真を読み取る",systemImage:"text.viewfinder").font(.headline).frame(maxWidth:.infinity,minHeight:52)
+                    }.background(.mint,in:RoundedRectangle(cornerRadius:16)).foregroundStyle(.black).accessibilityIdentifier("stillOCR")
                     if model.capturedImage != nil, model.cameraRunning { Button("期限を撮り直す") { model.beginExpiry() }.frame(minHeight:44) }
                 }
                 HStack {
@@ -188,14 +184,9 @@ struct NativeScanView: View {
                     Text(model.aiBusy ? "中止":model.aiReady ? "AIで読み取る":"AIは設定で準備").font(.caption)
                 }
                 Spacer()
-                Button { model.pauseScan() } label: { Image(systemName:model.paused ? "play.fill":"pause.fill").font(.title2).frame(width:52,height:52).background(.white.opacity(0.14),in:Circle()) }
-                    .accessibilityLabel(model.paused ? "読み取りを再開":"読み取りを一時停止").disabled(!model.cameraRunning || model.aiBusy)
+                Button { manualEntry() } label: { Image(systemName:"square.and.pencil").font(.title2).frame(width:52,height:52).background(.white.opacity(0.14),in:Circle()) }
+                    .accessibilityLabel("手入力").disabled(model.aiBusy)
             } }
-            if !model.aiBusy, !model.lastAnswer.isEmpty || !model.scanDebug.isEmpty {
-                Button { details = true } label: {
-                    Label("生出力・判定理由を見る",systemImage:"text.bubble").font(.subheadline).frame(maxWidth:.infinity,minHeight:44)
-                }.accessibilityIdentifier("rawRecognition")
-            }
             if model.candidate == nil, !model.aiBusy, model.capturedImage == nil, !model.expiryMode {
                 nextProductButton
             }
@@ -226,13 +217,18 @@ struct NativeScanView: View {
         }.background(.white.opacity(0.22),in:Capsule())
             .overlay(Capsule().stroke(.white.opacity(0.45),lineWidth:1)).accessibilityIdentifier("nextCapture")
     }
+    private func manualEntry() { model.nextFood(); model.registrationForReview(); var food = Food(); food.location = model.location; editing = food }
     private func resumeCamera() {
         if model.camera == nil, !model.demo { Task { await model.startCamera(store:store) } }
     }
     private func candidate(_ food: Food) -> some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack {
-                Text(food.name.isEmpty ? "商品名を確認":food.name).font(.title3.bold()).lineLimit(2)
+            HStack(spacing:12) {
+                FoodIconView(name:food.name,size:40).frame(width:52,height:52).background(.white.opacity(0.12),in:RoundedRectangle(cornerRadius:14))
+                VStack(alignment:.leading,spacing:4) {
+                    Text(food.name.isEmpty ? "商品名を確認":food.name).font(.title3.bold()).lineLimit(2)
+                    steps(food)
+                }
                 Spacer()
                 Button("編集") { model.registrationForReview(); editing = food }.font(.subheadline).frame(minWidth:44,minHeight:44)
                 Button { model.cancelCandidate(); resumeCamera() } label: { Image(systemName:"xmark").frame(width:44,height:44) }.accessibilityLabel("候補を取り消す")
@@ -252,24 +248,49 @@ struct NativeScanView: View {
                 Text(food.quantity > 0 ? "\(food.quantity.formatted())\(food.unit) · 数量は「編集」で変更できます":"数量を確認してください").font(.subheadline)
                 if let date = food.expiryDate { Text("\(FoodRules.expiryTypes[food.expiryType] ?? "日付") \(date)").font(.subheadline) }
             }
+            // Only the next missing step gets the big button; the rest stay as quiet text buttons.
+            let needsExpiry = !model.expiryMode && food.kind != "produce" && model.scanMode == "add" && food.expiryDate == nil
             if !model.expiryMode, food.kind != "produce" {
                 HStack(spacing:12) {
                     Button("期限を手入力") { openExpiryEditor() }.frame(minHeight:48).foregroundStyle(.white.opacity(0.8))
-                    Button { model.beginExpiry() } label: {
-                        Label(food.expiryDate == nil ? "期限を読み取る":"期限を再読取",systemImage:"viewfinder")
-                            .fontWeight(.bold).frame(maxWidth:.infinity,minHeight:50)
-                    }.background(.mint,in:RoundedRectangle(cornerRadius:16)).foregroundStyle(.black)
-                        .disabled(!model.cameraRunning && !model.demo && model.capturedImage == nil).accessibilityIdentifier("readExpiry")
+                    if needsExpiry {
+                        Button { model.beginExpiry() } label: {
+                            Label("期限を読み取る",systemImage:"viewfinder").fontWeight(.bold).frame(maxWidth:.infinity,minHeight:50)
+                        }.background(.mint,in:RoundedRectangle(cornerRadius:16)).foregroundStyle(.black)
+                            .disabled(!model.cameraRunning && !model.demo && model.capturedImage == nil).accessibilityIdentifier("readExpiry")
+                    } else {
+                        Spacer()
+                        Button("期限を再読取") { model.beginExpiry() }.frame(minHeight:48).foregroundStyle(.white.opacity(0.8))
+                            .disabled(!model.cameraRunning && !model.demo && model.capturedImage == nil).accessibilityIdentifier("readExpiry")
+                    }
                 }.font(.subheadline)
             }
             Button {
                 do { try model.confirm(food,store:store); resumeCamera() }
                 catch { model.scanMessage = error.localizedDescription; model.alert = error.localizedDescription }
             } label: {
-                Label(model.scanMode == "consume" ? "確認して消費":"確認して登録",systemImage:"checkmark").font(.headline).frame(maxWidth:.infinity,minHeight:46)
-            }.background(.white,in:Capsule()).foregroundStyle(.black).accessibilityIdentifier("reviewCandidate")
+                Label(model.scanMode == "consume" ? "確認して消費":"確認して登録",systemImage:"checkmark").font(.headline).frame(maxWidth:.infinity,minHeight:needsExpiry ? 44:52)
+            }.background(needsExpiry ? Color.white.opacity(0.18):Color.white,in:Capsule()).foregroundStyle(needsExpiry ? Color.white:Color.black).accessibilityIdentifier("reviewCandidate")
         }.padding(16).background(Color(white:0.15),in:RoundedRectangle(cornerRadius:22))
             .overlay(RoundedRectangle(cornerRadius:22).stroke(.white.opacity(0.2),lineWidth:1))
+    }
+    /// 商品 → 期限 → 登録, so the missing part is visible at a glance.
+    private func steps(_ food: Food) -> some View {
+        let named = !food.name.isEmpty
+        let dated = food.expiryDate != nil || food.kind == "produce" || model.scanMode == "consume"
+        return HStack(spacing:6) {
+            stepLabel("商品",done:named)
+            Image(systemName:"chevron.right").font(.system(size:9,weight:.bold)).foregroundStyle(.white.opacity(0.4))
+            stepLabel("期限",done:dated)
+            Image(systemName:"chevron.right").font(.system(size:9,weight:.bold)).foregroundStyle(.white.opacity(0.4))
+            stepLabel(model.scanMode == "consume" ? "消費":"登録",done:false,current:named && dated)
+        }.accessibilityElement(children:.combine)
+    }
+    private func stepLabel(_ title: String, done: Bool, current: Bool = false) -> some View {
+        HStack(spacing:3) {
+            Image(systemName:done ? "checkmark.circle.fill":current ? "circle.inset.filled":"circle").font(.caption2)
+            Text(title).font(.caption.weight(.semibold))
+        }.foregroundStyle(done ? Color.mint:current ? Color.white:Color.white.opacity(0.55))
     }
     private func chip(_ text: String, icon: String, food: Food) -> some View {
         Button { model.registrationForReview(); editing = food } label: {
