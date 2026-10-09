@@ -23,6 +23,16 @@ if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
 SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); phones=[(tuple(int(n) for n in r.split("iOS-")[1].split("-")),v["name"],v["udid"]) for r,ds in d["devices"].items() if "iOS-" in r for v in ds if v["name"].startswith("iPhone")]; print(max(phones)[2])')
 collect_results() {
+  # XCTest may use a cloned simulator container rather than the selected UDID.
+  # Copy only this app's uniquely named diagnostics, including after a timeout.
+  python3 - <<'PY'
+from pathlib import Path
+import shutil
+devices = Path.home() / 'Library/Developer/CoreSimulator/Devices'
+for folder in devices.glob('*/data/Containers/Data/Application/*/Documents/NativeAI'):
+    target = Path('ios/build-runtime/native-logs') / folder.parent.parent.name
+    shutil.copytree(folder, target, dirs_exist_ok=True)
+PY
   DATA_CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR_ID" jp.mugilab.fridge data 2>/dev/null || true)
   if [ -n "$DATA_CONTAINER" ] && [ -d "$DATA_CONTAINER/Documents/GemmaProbe-CI" ]; then
     mkdir -p ios/build-runtime/probe-logs
@@ -41,4 +51,5 @@ trap collect_results EXIT
 xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
   -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
   -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
-  -parallel-testing-enabled NO "$@" test
+  -parallel-testing-enabled NO -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 240 "$@" test

@@ -338,7 +338,7 @@ struct NativeSettingsView: View {
                     Button("最新のAIログを準備") {
                         do {
                             let root = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("NativeAI")
-                            let folders = try FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:[.contentModificationDateKey])
+                            let folders = try FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:[.contentModificationDateKey,.isDirectoryKey]).filter { (try? $0.resourceValues(forKeys:[.isDirectoryKey]).isDirectory) == true }
                             guard let latest = folders.sorted(by:{ ((try? $0.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast) > ((try? $1.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }).first else { return }
                             let combined = ["phases.txt","native-stderr.txt"].map { name in name+"\n"+((try? String(contentsOf:latest.appendingPathComponent(name),encoding:.utf8)) ?? "") }.joined(separator:"\n\n")
                             let output = root.appendingPathComponent("latest-log.txt"); try combined.write(to:output,atomically:true,encoding:.utf8); logURL = output
