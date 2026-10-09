@@ -1,8 +1,8 @@
-name: Gemma reference probe
+name: Integrated Gemma iOS
 on:
   push:
     branches: [codex/gemma-reference-probe]
-    paths: ['ios/**', 'scripts/**', '.github/workflows/gemma-probe.yml']
+    paths: ['ios/**', 'public/**', 'scripts/**', '.github/workflows/gemma-probe.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,22 +25,18 @@ jobs:
           uname -m
           xcodebuild -version
           xcrun simctl list runtimes
-      - name: Build device probe
+      - name: Build integrated device app
         run: bash scripts/build-ios.sh 2>&1 | tee device-build.log
-      - name: Test reference library on real model in Simulator
+      - name: Test integrated Gemma and camera OCR on real runtime
         id: runtime
-        continue-on-error: true
         timeout-minutes: 8
-        run: bash scripts/test-ios-runtime.sh -only-testing:FridgeRuntimeTests/ReferenceProbeTests -test-timeouts-enabled YES -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 240 2>&1 | tee runtime-test.log
-      - name: Verify probe screen and inventory persistence
+        run: bash scripts/test-ios-runtime.sh -skip-testing:FridgeRuntimeTests/ReferenceProbeTests -test-timeouts-enabled YES -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 240 2>&1 | tee runtime-test.log
+      - name: Verify normal launch and inventory persistence
         run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
-      # This is an experiment for comparing a known failing physical runtime.
-      # Retain an installable diagnostic build if Simulator inference fails;
-      # the UI/persistence checks above still must pass, and logs expose outcome.
-      - name: Save device experiment IPA
+      - name: Save verified integrated IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Fridge-Gemma-Probe
+          name: Fridge-AltStore
           path: ios/build/ipa/Fridge-unsigned.ipa
           compression-level: 0
           retention-days: 7
@@ -49,7 +45,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gemma-Probe-diagnostics
+          name: Fridge-iOS-diagnostics
           path: |
             device-build.log
             runtime-test.log

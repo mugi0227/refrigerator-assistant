@@ -32,10 +32,8 @@ actor ReferenceProbe {
                 "prewarm": true, "enableBenchmark": true, "speculativeDecoding": false, "thinking": "upstream default"] as [String: Any]
         ]
         #if targetEnvironment(simulator)
-        let backend: Backend = .cpu(threadCount: 4)
         result["environment"] = "Simulator: CPU text; does not validate device Metal"
         #else
-        let backend: Backend = .gpu
         result["environment"] = "Physical iPhone: GPU text, CPU vision"
         #endif
         let report = output.appendingPathComponent("result.json")
@@ -62,8 +60,7 @@ actor ReferenceProbe {
                 ExperimentalFlags.enableBenchmark = previousBenchmark
                 ExperimentalFlags.enableSpeculativeDecoding = previousSpeculative
             }
-            let chat = try await LiteRTChat(modelFileURL: model, modalities: .textImage,
-                visualTokenBudget: 280, enableBenchmark: true, backend: backend)
+            let chat = try await VerifiedGemma.make(model)
             result["initializationAndPrewarmSucceeded"] = true
             journal.append("reference initialized, including upstream Hi warmup")
             // Same fixture and prompt as the published G0 vision test, first

@@ -128,6 +128,9 @@ struct FridgeWebView: UIViewRepresentable {
                         }
                         let point = preview.videoLayer.captureDevicePointConverted(fromLayerPoint: CGPoint(x: x * preview.bounds.width, y: y * preview.bounds.height))
                         try await camera.focus(at: point); reply(id, [:])
+                    case "cameraReadText":
+                        guard active, cameraActive else { throw FridgeError.message("カメラを開いた状態で読み取ってください。") }
+                        reply(id, try await camera.readText())
                     case "cameraStop":
                         preview?.isHidden = true; await camera.stop(); cameraActive = false; updateIdleTimer(); reply(id, [:])
                     case "importModel":

@@ -4,6 +4,29 @@ import CoreImage
 @testable import Fridge
 
 final class CameraProcessingTests: XCTestCase {
+    func testPrintedExpiryRecognitionUsesHDFrameAndVisibleRegion() async throws {
+        let png = await MainActor.run {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            return UIGraphicsImageRenderer(size: CGSize(width: 1080, height: 1920), format: format).image { context in
+                UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 1080, height: 1920))
+                let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 52), .foregroundColor: UIColor.black]
+                // Expiry is above the square AI crop, like a package lid.
+                ("賞味期限 2026.10.31" as NSString).draw(at: CGPoint(x: 100, y: 350), withAttributes: attributes)
+                ("製造年月日 2026.09.01" as NSString).draw(at: CGPoint(x: 100, y: 1300), withAttributes: attributes)
+            }.pngData()!
+        }
+        let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+        attachment.name = "HD printed Japanese expiry"; attachment.lifetime = .keepAlways; add(attachment)
+        let image = try XCTUnwrap(CIImage(data: png))
+        let lines = try CameraTextReader.recognize(image)
+        let text = lines.compactMap { $0["text"] as? String }.joined(separator: " | ")
+        XCTAssertTrue(text.contains("賞味期限"), text); XCTAssertTrue(text.contains("2026.10.31"), text)
+        XCTAssertTrue(text.contains("製造年月日"), text); XCTAssertTrue(text.contains("2026.09.01"), text)
+        XCTAssertTrue(lines.allSatisfy { ($0["confidence"] as? Double ?? 0) > 0 && $0["x"] is Double })
+        let bottom = try CameraTextReader.recognize(image, region: CGRect(x: 0, y: 0, width: 1, height: 0.4))
+        XCTAssertFalse(bottom.compactMap { $0["text"] as? String }.joined().contains("2026.10.31"))
+        print("FRIDGE_CAMERA_OCR: \(text); high-resolution input and visible ROI verified")
+    }
     func testEAN13OutsideAICropAndVisibleRegion() async throws {
         let gtin = "4901234567894"
         // Independent EAN-13 fixture: guards, parity, quiet zones and six-pixel

@@ -9,10 +9,15 @@ import OSLog
 final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureMetadataOutputObjectsDelegate, @unchecked Sendable {
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "fridge.camera")
+    private let textQueue = DispatchQueue(label: "fridge.camera.text", qos: .userInitiated)
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let logger = Logger(subsystem: "jp.mugilab.fridge", category: "Camera")
     private let lock = NSLock()
     private var latest: Data?
+    private var latestPixels: CVPixelBuffer?
+    private var latestCapturedAt: TimeInterval = 0
+    private var latestTextRegion = CGRect.zero
+    private var textInFlight = false
     private var device: AVCaptureDevice?
     private var videoOutput: AVCaptureVideoDataOutput?
     private var metadataOutput: AVCaptureMetadataOutput?
@@ -145,11 +150,33 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     }
     func stop() async {
         await withCheckedContinuation { (promise: CheckedContinuation<Void, Never>) in queue.async {
-            self.session.stopRunning(); self.lock.lock(); self.latest = nil; self.lock.unlock(); promise.resume()
+            self.session.stopRunning(); self.lock.lock(); self.latest = nil; self.latestPixels = nil; self.lock.unlock(); promise.resume()
         } }
     }
     deinit { NotificationCenter.default.removeObserver(self) }
     func image() throws -> Data { lock.lock(); defer { lock.unlock() }; guard let latest else { throw FridgeError.message("カメラ映像を待っています。食品を枠に映してください。") }; return latest }
+
+    private func textSnapshot() throws -> (CVPixelBuffer, CGRect, TimeInterval) {
+        lock.lock(); defer { lock.unlock() }
+        guard !textInFlight else { throw FridgeError.message("印字を読み取り中です。") }
+        guard let latestPixels, latestTextRegion.width > 0 else { throw FridgeError.message("印字を枠に映してください。") }
+        textInFlight = true
+        return (latestPixels, latestTextRegion, latestCapturedAt)
+    }
+    func readText() async throws -> [String: Any] {
+        let (pixels, region, capturedAt) = try textSnapshot()
+        // Keep only the latest HD frame and one in-flight request. Recognition
+        // runs away from the capture queue so preview and focus stay responsive.
+        return try await withCheckedThrowingContinuation { promise in
+            textQueue.async {
+                defer { self.lock.lock(); self.textInFlight = false; self.lock.unlock() }
+                do {
+                    let lines = try autoreleasepool { try CameraTextReader.recognize(CIImage(cvPixelBuffer: pixels), region: region) }
+                    promise.resume(returning: ["lines": lines, "capturedAt": capturedAt * 1000])
+                } catch { promise.resume(throwing: error) }
+            }
+        }
+    }
 
     private func emitCodes(_ codes: [[String: String]], at now: TimeInterval) {
         guard !codes.isEmpty else { return }
@@ -170,6 +197,8 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         let now = Date().timeIntervalSince1970
         guard session.isRunning, now - lastFrame >= 0.5, let pixels = CMSampleBufferGetImageBuffer(buffer) else { return }
         lastFrame = now
+        lock.lock(); latestPixels = pixels; latestCapturedAt = now
+        latestTextRegion = regionConfigured ? barcodeRegion : .zero; lock.unlock()
         autoreleasepool {
             let image = CIImage(cvPixelBuffer: pixels)
             // Decode the high-resolution visible image, independently of Gemma
@@ -183,6 +212,29 @@ final class NativeCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             lock.lock(); latest = input; lock.unlock()
             // Hidden HTML image is only a thumbnail, never the visible preview.
             onFrame?(thumbnail.base64EncodedString(), [])
+        }
+    }
+}
+
+enum CameraTextReader {
+    static func recognize(_ image: CIImage, region: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)) throws -> [[String: Any]] {
+        let clipped = region.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return [] }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        request.usesCPUOnly = true
+        let supported = try request.supportedRecognitionLanguages()
+        request.recognitionLanguages = ["ja-JP", "en-US"].filter { supported.contains($0) }
+        request.customWords = ["賞味期限", "消費期限", "製造年月日"]
+        request.minimumTextHeight = 0.008
+        request.regionOfInterest = clipped
+        try VNImageRequestHandler(ciImage: image, orientation: .up).perform([request])
+        return (request.results ?? []).prefix(100).compactMap { observation in
+            guard let text = observation.topCandidates(1).first else { return nil }
+            let b = observation.boundingBox
+            return ["text": text.string, "confidence": Double(text.confidence),
+                    "x": Double(b.minX), "y": Double(b.minY), "width": Double(b.width), "height": Double(b.height)]
         }
     }
 }

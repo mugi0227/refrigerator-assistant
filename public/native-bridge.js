@@ -1,6 +1,7 @@
 import {GemmaVision,promptFor} from './vision.js';
 import {CameraScanner} from './scanner.js';
 import {parseBarcode} from './core.js';
+import {parsePrintedExpiry} from './printed-expiry.js';
 export const isNative=!!globalThis.webkit?.messageHandlers?.fridge;
 const pending=new Map(),listeners=new Set();let sequence=0;
 if(isNative)window.fridgeNativeReceive=message=>{
@@ -58,16 +59,42 @@ export class NativeCameraScanner extends CameraScanner {
     this.receiveFrame=message=>{if(!['cameraFrame','barcodeFrame'].includes(message.type)||!this.running)return;
       if(message.type==='cameraFrame'&&message.jpeg)this.video.src=`data:image/jpeg;base64,${message.jpeg}`;
       if(!this.paused)this.handleCodes(message.codes||[]).catch(error=>this.onStatus(error.message));};listeners.add(this.receiveFrame);}
-  async start(mode='add',location='fridge'){await this.stop();await this.sounds.unlock();this.machine.mode=mode;this.machine.location=location;this.machine.reset();this.paused=false;this.failures=0;
+  async start(mode='add',location='fridge'){await this.stop();await this.sounds.unlock();this.machine.mode=mode;this.machine.location=location;this.machine.reset();this.paused=false;this.failures=0;this.visionSuppressed=false;
     const epoch=++this.epoch,result=await nativeCall('cameraStart');if(epoch!==this.epoch){await nativeCall('cameraStop');return;}this.running=true;
     this.nativePreview=result.nativePreview===true;document.documentElement.classList.toggle('native-camera-preview',this.nativePreview);this.focusControls.hidden=false;this.schedulePreviewLayout();
-    this.onStatus(this.vision.ready?'読み取り中 · iOS端末内で処理':'バーコード読み取り中 · Gemmaは未起動');
-    this.timer=setInterval(()=>{if(!this.paused)this.machine.tick();},100);this.visionLoop(epoch);
+    this.onStatus('食品のバーコードや印字を映してください');
+    this.timer=setInterval(()=>{if(!this.paused)this.machine.tick();},100);this.visionLoop(epoch);this.textLoop(epoch);
   }
   async handleCodes(codes){await super.handleCodes(codes);
     const valid=[...new Set(codes.map(c=>parseBarcode(c.text)?.barcode).filter(Boolean))];
-    if(this.running&&!this.paused&&valid.length===1)this.onStatus(`バーコードを読み取りました：${valid[0]}`);
+    if(this.running&&!this.paused&&valid.length>1){this.multipleCodesUntil=Date.now()+1500;this.machine.revision++;this.machine.pending=null;this.machine.printedVotes=null;this.machine.printed({ambiguous:true});this.machine.emit('食品を1種類ずつ映してください');this.onStatus('食品を1種類ずつ映してください');return;}
+    if(valid.length===1)this.multipleCodesUntil=0;
+    if(this.running&&!this.paused&&valid.length===1)this.onStatus(this.machine.pending?'読み取りました。登録内容を確認してください':'バーコードを読み取りました。期限の印字を映してください');
   }
+  async textLoop(epoch){
+    if(!this.running||epoch!==this.epoch)return;
+    const target=this.machine.target,revision=this.machine.revision;
+    if(!this.paused&&!this.textBusy&&Date.now()>=(this.multipleCodesUntil||0)&&this.machine.mode==='add'&&target?.barcode&&target.kind==='packaged'){
+      this.textBusy=true;const started=performance.now();
+      try{const result=await nativeCall('cameraReadText',{},15000);
+        if(this.running&&epoch===this.epoch&&!this.paused&&revision===this.machine.revision&&target===this.machine.target&&Number.isFinite(result.capturedAt)&&result.capturedAt>=target.seenAt&&result.capturedAt>this.lastTextFrame){
+          this.lastTextFrame=result.capturedAt;
+          this.machine.printed(parsePrintedExpiry(result.lines));
+          this.onMetric({ms:performance.now()-started,text:(result.lines||[]).map(l=>l.text).join('\n')||'印字を枠に映してください'});
+          if(this.machine.pending)this.onStatus('読み取りました。登録内容を確認してください');
+        }
+      }catch{/* A blurred frame or unavailable recognizer must not stop scanning. */}
+      finally{this.textBusy=false;}
+    }
+    if(this.running&&epoch===this.epoch)this.textTimer=setTimeout(()=>this.textLoop(epoch),800);
+  }
+  async visionLoop(epoch){
+    // Once a package has a barcode, native text recognition handles its date.
+    // Keep optional image recognition for foods that have no product code.
+    if(this.machine.target?.barcode||this.visionSuppressed){if(this.running&&epoch===this.epoch)this.visionTimer=setTimeout(()=>this.visionLoop(epoch),500);return;}
+    return super.visionLoop(epoch);
+  }
+  visionFailure(){this.failures=(this.failures||0)+1;if(this.failures>=3){this.visionSuppressed=true;this.onStatus('食品名が読み取れない場合は、編集から入力できます');}}
   async focusAt(x,y){if(!this.running||!this.nativePreview)return;x=Math.min(1,Math.max(0,x));y=Math.min(1,Math.max(0,y));
     this.focusRing.style.left=`${x*100}%`;this.focusRing.style.top=`${y*100}%`;this.focusRing.hidden=false;
     clearTimeout(this.focusTimer);this.focusTimer=setTimeout(()=>{this.focusRing.hidden=true;},1000);
@@ -80,6 +107,7 @@ export class NativeCameraScanner extends CameraScanner {
     nativeCall('cameraPreviewLayout',{x:rect.x,y:rect.y,width:rect.width,height:rect.height,radius,visible:!!stage.getClientRects().length}).catch(()=>{});
   });}
   async stop(){document.documentElement.classList.remove('native-camera-preview');this.nativePreview=false;
+    clearTimeout(this.textTimer);this.lastTextFrame=0;
     this.focusStart=null;clearTimeout(this.focusTimer);this.focusRing.hidden=true;this.focusControls.hidden=true;
     cancelAnimationFrame(this.layoutFrame);this.layoutFrame=0;await super.stop();if(isNative)await nativeCall('cameraStop').catch(()=>{});}
   async destroy(){await super.destroy();listeners.delete(this.receiveFrame);this.previewObserver.disconnect();window.removeEventListener('scroll',this.previewLayout);window.removeEventListener('resize',this.previewLayout);

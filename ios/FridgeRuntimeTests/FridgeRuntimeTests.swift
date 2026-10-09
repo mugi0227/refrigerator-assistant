@@ -11,19 +11,19 @@ final class FridgeRuntimeTests: XCTestCase {
         print("FRIDGE_RUNTIME_BACKEND: \(LocalAI.runtimeLabel)")
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try await ai.load(URL(fileURLWithPath: modelPath), cache: cache)
+        try await ai.checkImageInference()
         let ready = await ai.isReady()
         XCTAssertTrue(ready)
-        try await ai.checkImageInference()
         let text = try await ai.infer(prompt: "Reply with exactly BLUE-47 and nothing else.", image: nil, maxOutputTokens: 32)
         let answer = try XCTUnwrap(text["text"] as? String)
         print("FRIDGE_RUNTIME_TEXT: \(answer)")
         XCTAssertTrue(answer.contains("BLUE-47"), answer)
-        for side in [320, 384] {
+        for (side, colorName) in [(320, "red"), (384, "blue")] {
             let jpeg = await MainActor.run {
                 let format = UIGraphicsImageRendererFormat(); format.scale = 1
                 return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { context in
                     UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: side, height: side))
-                    UIColor.red.setFill(); context.fill(CGRect(x: 20, y: 20, width: side - 40, height: side - 40))
+                    (colorName == "red" ? UIColor.red : UIColor.blue).setFill(); context.fill(CGRect(x: 20, y: 20, width: side - 40, height: side - 40))
                 }.jpegData(compressionQuality: 0.85)!
             }
             let dimensions = try XCTUnwrap(UIImage(data: jpeg)?.cgImage)
@@ -33,8 +33,22 @@ final class FridgeRuntimeTests: XCTestCase {
             let result = try await ai.infer(prompt: "Name the color of the large rectangle in this image. Answer in English with one word.", image: jpeg, maxOutputTokens: 32)
             let reply = try XCTUnwrap(result["text"] as? String)
             print("FRIDGE_RUNTIME_IMAGE_\(side): \(reply)")
-            XCTAssertTrue(reply.lowercased().contains("red"), reply)
+            XCTAssertTrue(reply.lowercased().contains(colorName), reply)
         }
+        // Use the app's real scanner prompt, generated from promptFor(null),
+        // rather than validating only one-word toy prompts.
+        let promptURL = try XCTUnwrap(Bundle.main.url(forResource: "scanner-prompt", withExtension: "txt", subdirectory: "Web"))
+        let appleURL = try XCTUnwrap(Bundle.main.url(forResource: "apple", withExtension: "png", subdirectory: "Probe"))
+        let scanned = try await ai.infer(prompt: String(contentsOf: promptURL, encoding: .utf8), image: Data(contentsOf: appleURL), maxOutputTokens: 256)
+        let scannedText = try XCTUnwrap(scanned["text"] as? String)
+        print("FRIDGE_RUNTIME_SCANNER_JSON: \(scannedText)")
+        let scannedStart = try XCTUnwrap(scannedText.firstIndex(of: "{"))
+        let scannedEnd = try XCTUnwrap(scannedText.lastIndex(of: "}"))
+        let scannedJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(scannedText[scannedStart...scannedEnd].utf8)) as? [String: Any])
+        XCTAssertEqual(scannedJSON["kind"] as? String, "produce", scannedText)
+        let name = scannedJSON["name"] as? String ?? ""
+        XCTAssertTrue(["りんご", "リンゴ", "林檎", "apple"].contains(where: { name.lowercased().contains($0) }), scannedText)
+        XCTAssertTrue(scannedJSON["expiry"] is NSNull, scannedText)
         // Exercise readable food/expiry text and complete streamed JSON, not
         // only a color word. This is a generated label, not a camera benchmark.
         let label = await MainActor.run {
@@ -60,5 +74,19 @@ final class FridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(food["food"]?.lowercased(), "milk", reply)
         XCTAssertEqual(food["date"], "2026-10-31", reply)
         try await ai.unload()
+        let unloaded = await ai.isReady()
+        XCTAssertFalse(unloaded)
+    }
+
+    func testCancellationIsScopedToOneOperation() throws {
+        let cancellation = InferenceCancellation()
+        let old = InferenceOperation(); cancellation.set(old); cancellation.cancel()
+        XCTAssertThrowsError(try old.check())
+        let next = InferenceOperation(); cancellation.set(next)
+        old.cancel() // A late watchdog must not touch the next request.
+        XCTAssertNoThrow(try next.check())
+        cancellation.cancel()
+        XCTAssertThrowsError(try next.check())
+        cancellation.set(nil)
     }
 }

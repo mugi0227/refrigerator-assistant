@@ -184,7 +184,7 @@ export class ScanMachine {
   constructor({ onChange=()=>{}, onDetect=()=>{}, onCommit=()=>{}, confirmMs=5000 }={}) {
     Object.assign(this,{ onChange,onDetect,onCommit,confirmMs }); this.mode='add'; this.location='fridge'; this.reset();
   }
-  reset() { this.target=null; this.pending=null; this.lock=null; this.votes=null; this.emptySince=null; this.emptyCount=0; this.revision=(this.revision||0)+1; this.emit(); }
+  reset() { this.target=null; this.pending=null; this.lock=null; this.votes=null; this.printedVotes=null; this.emptySince=null; this.emptyCount=0; this.revision=(this.revision||0)+1; this.emit(); }
   emit(message='') { this.onChange({target:this.target,pending:this.pending,lock:this.lock,message,revision:this.revision}); }
   key(x) { return x.barcode ? `b:${x.barcode}` : `n:${canonicalName(x.name).toLowerCase()}`; }
   isSame(a,b) { return !!a && !!b && (a.barcode && b.barcode ? a.barcode===b.barcode : canonicalName(a.name)===canonicalName(b.name)); }
@@ -193,7 +193,7 @@ export class ScanMachine {
     if(this.lock && this.isSame(this.lock,candidate)) { this.emit('登録済みです。次の食品を映してください'); return false; }
     if(this.target && this.isSame(this.target,candidate)) { Object.assign(this.target,candidate); return true; }
     if(this.pending) this.commit();
-    this.target={...candidate,location:this.location,seenAt:now}; this.votes=null; this.revision++;
+    this.target={...candidate,location:this.location,seenAt:now}; this.votes=null; this.printedVotes=null; this.revision++;
     this.onDetect(); this.emit(); return true;
   }
   barcode(data, known, now=Date.now()) {
@@ -253,11 +253,31 @@ export class ScanMachine {
     if(!this.target || this.pending) return;
     this.pending={...this.target, deadline:now+this.confirmMs, mode:this.mode}; this.emit();
   }
+  printed(result,now=Date.now()) {
+    const target=this.target;
+    if(!target?.barcode||target.kind!=='packaged'||this.mode!=='add')return;
+    if(result.ambiguous){this.pending=null;this.printedVotes=null;delete target.expiry;delete target.printedDate;this.emit('日付が複数あります。期限の印字だけを映すか、編集で確認してください');return;}
+    const expiry=verifiedExpiry(result.expiry);
+    if(!expiry){
+      this.printedVotes=null;
+      if(result.candidate){
+        if(this.pending&&this.pending.expiry?.date!==result.candidate.date){this.pending=null;delete target.expiry;}
+        if(!target.expiry){target.printedDate={...result.candidate};this.emit('日付を読み取りました。賞味期限か消費期限かを確認してください');}
+      }
+      return;
+    }
+    if(this.pending){if(this.pending.expiry?.date===expiry.date&&this.pending.expiry?.type===expiry.type)return;this.pending=null;this.printedVotes=null;}
+    target.expiry=expiry;delete target.printedDate;
+    if(target.name==='未登録の商品'){this.printedVotes=null;this.emit('期限を読み取りました。編集から商品名を入力してください');return;}
+    const signature=JSON.stringify([this.key(target),expiry.type,expiry.date]);
+    if(this.printedVotes?.signature===signature)this.printedVotes.count++;else this.printedVotes={signature,count:1};
+    if(this.printedVotes.count>=2)this.stage(now);else this.emit('期限をもう一度照合しています');
+  }
   tick(now=Date.now()) { if(this.pending && now>=this.pending.deadline) this.commit(); }
   commit() {
     if(!this.pending) return;
-    const item={...this.pending}; this.pending=null; this.lock={...item}; this.target=null; this.votes=null; this.revision++;
+    const item={...this.pending}; this.pending=null; this.lock={...item}; this.target=null; this.votes=null; this.printedVotes=null; this.revision++;
     this.onCommit(item); this.emit();
   }
-  cancel() { if(this.target) this.lock={...this.target}; this.pending=null; this.target=null; this.votes=null; this.revision++; this.emit('取り消しました'); }
+  cancel() { if(this.target) this.lock={...this.target}; this.pending=null; this.target=null; this.votes=null; this.printedVotes=null; this.revision++; this.emit('取り消しました'); }
 }
