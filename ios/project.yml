@@ -5,8 +5,7 @@ options:
     iOS: '17.0'
 packages:
   LiteRTLM:
-    url: https://github.com/john-rocky/swift-litert-lm
-    revision: 1c12d404153b8e261d48da584f6f80465e294ac2
+    path: Vendor/LiteRTLM
   # Recovery build: keep Gemma isolated until MLX coexistence works on device.
 settings:
   base:

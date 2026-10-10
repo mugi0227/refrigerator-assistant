@@ -1,0 +1,29 @@
+{
+  "repository": "john-rocky/swift-litert-lm",
+  "revision": "1c12d404153b8e261d48da584f6f80465e294ac2",
+  "originalFileSHA256": {
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "NOTICE": "c83b11684e224e14c02ac3aa2a6e3ec8a4808cf1f73ae8f724ca886c0fe5d695",
+    "Package.swift": "bd956001d4042b4c433a6186dfcb3a48859be9f14f7164c75785692294177802",
+    "Sources/LiteRTFoundation/Download/ModelDownloader.swift": "7684ad9cc462e1dcbe58d3df14efe60b7fefef1ded1bb11f82e1f6684a67c4a0",
+    "Sources/LiteRTFoundation/Download/OdaiModelStore.swift": "f7c5e145bafd6a9df369a15449fc44dcbcdfde1278ec493cdb67a97a6cb3a4ca",
+    "Sources/LiteRTFoundation/Easy/LiteRTChat.swift": "74b203edd85f3cd5603e2f3dfa6cda850995cdfc53944740b9dca543b69de568",
+    "Sources/LiteRTFoundation/Easy/ModelCatalog.swift": "e6dd2b6672896e79ab0e76ac0fc2b5f4e7389f73e1d8e18327c54a09448a1fd9",
+    "Sources/LiteRTFoundation/FM/LiteRTLanguageModel+EdgeLock.swift": "fe44ebc9838bd419bcd4c722d6019f73fd7b18604bc75504c9762a5e030ab685",
+    "Sources/LiteRTFoundation/FM/LiteRTLanguageModel.swift": "4c7f69efc4d7bf70e9d84aa266275b88b8a17411deaaf7f6890ce35e64efa3c7",
+    "Sources/LiteRTFoundation/Util/CGImagePNG.swift": "117e699663361131c28ca3c86515d291d42899d3a3a947ef751520956d55f3af",
+    "Sources/LiteRTFoundation/Util/MemoryFootprint.swift": "c4f7706c09e87613cc998d83a985427a063c03e2c24a1074dc7ec65d8a0a63ac",
+    "Sources/LiteRTFoundation/Util/VideoFrameSampler.swift": "fbca03203005e5637867ec1005e05dbf03681511b9c131a2757f0127f47b095e",
+    "Sources/LiteRTLM/Benchmark.swift": "9096200cb1ad930cb6ac9af72747c430621739838b9f18ec8d3b2ea4fce7fd74",
+    "Sources/LiteRTLM/Capabilities.swift": "30bc7cd1057f9100ef19249863266481a61e4c80d2a28ccb6098236318dee020",
+    "Sources/LiteRTLM/Config.swift": "a3a1bffbe13bdaa30eded7df23a0be44c27c71444dac1bde94c0b2f8593708aa",
+    "Sources/LiteRTLM/Conversation.swift": "49701ac6c3856bb921e191a260fb19e58ec49b2f057a211093796dffc22e6b9e",
+    "Sources/LiteRTLM/Engine.swift": "2c9b5e10b9ca18fb3b28240dc37ff55801a2bca03d01756ff1e667518af04fa3",
+    "Sources/LiteRTLM/ExperimentalFlags.swift": "e7aa8ed306d0ab5c84557512da020a140af4c7b90c4d8cb54a53f585182fdbfc",
+    "Sources/LiteRTLM/LiteRTLMError.swift": "720ee53b1de10d9be497c6962515549038d4f8653260b16011bd352de71cad2e",
+    "Sources/LiteRTLM/Message.swift": "23631912d2caf0a63f971e5da869ef9e385fa1b93e459e1ea3232cc6a99fa637",
+    "Sources/LiteRTLM/ResponseFormat.swift": "071705a8d9e9916a83b2197514d58bdbd3a30e643903a9e826a500fb67772067",
+    "Sources/LiteRTLM/Tool.swift": "d9698c6c7f8425cfa1f479cec5070fe94d9ca732b3e20b171e3dd90ca1545422",
+    "Sources/LiteRTLM/ToolManager.swift": "7fed45d66e562a153dd61e57a8cc67cbd89fa063d1c09d9d20626ea48574d3f7"
+  }
+}

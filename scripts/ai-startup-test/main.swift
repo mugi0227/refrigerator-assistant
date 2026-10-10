@@ -76,3 +76,17 @@ check(failed.action(for: e2b) == .relaunch, "Failed or cancelled initialization 
 let restarted = AIEngineLifetime()
 check(restarted.action(for: e2b) == .initialize, "Relaunch restores E2B startup without altering saved models")
 print("AI engine lifetime checks passed: first startup, resident reuse, model/backend changes, teardown, failed initialization, process relaunch.")
+
+// Reproduce the deadlock contract without booting a model: deletion waits for
+// a callback to exit. Calling deletion inline would wait on its own callback.
+let callbacks = DispatchQueue(label: "test-native-callback")
+let callbackExited = DispatchSemaphore(value: 0), nativeReleased = DispatchSemaphore(value: 0)
+callbacks.async {
+    DeferredNativeRelease.enqueue {
+        check(callbackExited.wait(timeout: .now() + 2) == .success, "Native release must allow the callback to exit before waiting for it")
+        nativeReleased.signal()
+    }
+    callbackExited.signal()
+}
+check(nativeReleased.wait(timeout: .now() + 3) == .success, "Deferred native release must complete")
+print("Deferred native release checks passed: callback can exit while its native destructor waits on a separate queue.")
