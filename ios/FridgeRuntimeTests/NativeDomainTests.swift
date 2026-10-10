@@ -197,6 +197,13 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertEqual(model.candidate?.expiryDate,"2026-11-05"); XCTAssertTrue(store.active.isEmpty)
         model.nextFood(); XCTAssertNil(model.candidate); XCTAssertTrue(model.marks.isEmpty)
     }
+    func testModelChoicesArePinned() {
+        XCTAssertEqual(AIModelChoice.e2b.files.first?.sha256,ReferenceProbe.modelSHA256)
+        XCTAssertFalse(AIModelChoice.e4b.usesMLX); XCTAssertTrue(AIModelChoice.qwen35.usesMLX)
+        XCTAssertTrue(AIModelChoice.allCases.allSatisfy { $0.base.range(of:"/resolve/[0-9a-f]{40}/$",options:.regularExpression) != nil })
+        XCTAssertTrue(AIModelChoice.qwen35.files.contains { $0.local == "model.safetensors" && $0.sha256 != nil })
+        XCTAssertEqual(AIModelChoice.qwen35.expectedBytes,3_054_406_318)
+    }
     @MainActor func testExpiryModeAdoptsWithoutBarcodeAndManualDateWins() {
         let model = NativeAppModel(); model.cameraRunning = true
         model.beginExpiry(); XCTAssertNotNil(model.candidate); XCTAssertNil(model.candidate?.barcode)

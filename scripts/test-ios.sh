@@ -5,6 +5,8 @@ cd "$(dirname "$0")/.."
 node scripts/prepare-ios.mjs
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
+# MLX compiles Metal shaders; Xcode 26 ships the Metal toolchain as a separate component.
+xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
 SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 scripts/choose-ios-simulator.py)
 collect_results() {
   if [ -f ios/build-simulator/Build/Products/Debug-iphonesimulator/Fridge.app/Info.plist ]; then

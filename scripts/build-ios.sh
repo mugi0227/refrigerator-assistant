@@ -6,6 +6,8 @@ cd "$(dirname "$0")/.."
 node scripts/prepare-ios.mjs
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
+# MLX compiles Metal shaders; Xcode 26 ships the Metal toolchain as a separate component.
+xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
 xcodebuild -project ios/Fridge.xcodeproj -scheme Fridge -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ios/build \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build

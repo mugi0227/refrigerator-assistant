@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 mkdir -p local/native-runtime-fixture ios/FridgeRuntimeTests/Fixtures
 MODEL_PATH="$PWD/local/native-runtime-fixture/gemma-4-E2B-it.litertlm"
 if [ "${FRIDGE_CAMERA_ONLY:-0}" != "1" ]; then
-MODEL_URL=$(python3 -c 'import re; print(re.search(r"https://huggingface[^\"]+",open("ios/Fridge/ModelStore.swift").read()).group())')
+MODEL_URL=$(python3 -c 'import re; s=open("ios/Fridge/ModelStore.swift").read(); print(re.search(r"https://huggingface.co/litert-community/gemma-4-E2B[^\"]+/",s).group()+"gemma-4-E2B-it.litertlm")')
 if [ ! -f "$MODEL_PATH" ]; then
   curl --fail --location --retry 2 --connect-timeout 30 --max-time 900 "$MODEL_URL" -o "$MODEL_PATH.partial"
   mv "$MODEL_PATH.partial" "$MODEL_PATH"
@@ -14,7 +14,7 @@ python3 - "$MODEL_PATH" <<'PY'
 import hashlib,json,re,sys
 from pathlib import Path
 p=Path(sys.argv[1]); source=Path('ios/Fridge/ModelStore.swift').read_text()
-expected=int(re.search(r'expectedBytes: Int64 \{ self == \.e2b \? ([\d_]+)',source).group(1).replace('_',''))
+expected=int(re.search(r'remote:"gemma-4-E2B-it.litertlm",local:"[^"]+",bytes:([\d_]+)',source).group(1).replace('_',''))
 assert p.stat().st_size==expected, 'Incomplete real model fixture'
 print('Actual model fixture:',p.stat().st_size,'bytes; SHA256:',hashlib.file_digest(p.open('rb'),'sha256').hexdigest())
 Path('ios/FridgeRuntimeTests/Fixtures/config.json').write_text(json.dumps({'modelPath':str(p)}))
@@ -23,6 +23,8 @@ fi
 node scripts/prepare-ios.mjs
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
+# MLX compiles Metal shaders; Xcode 26 ships the Metal toolchain as a separate component.
+xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
 SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 scripts/choose-ios-simulator.py)
 collect_results() {
   # XCTest may use a cloned simulator container rather than the selected UDID.

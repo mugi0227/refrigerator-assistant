@@ -11,7 +11,7 @@ struct ScanNotice { let title: String, message: String, icon: String }
     @Published var aiBusy = false
     @Published var loading = false
     @Published var modelSaved = false
-    @Published var variant = GemmaVariant.e2b
+    @Published var variant = AIModelChoice.e2b
     @Published var status = "AIを使わず、手入力・バーコード・印字の読み取りができます。"
     @Published var aiErrorDetail = ""
     @Published var progress: Double?
@@ -67,8 +67,13 @@ struct ScanNotice { let title: String, message: String, icon: String }
         loading = true; aiReady = false; aiErrorDetail = ""; UIApplication.shared.isIdleTimerDisabled = true
         defer { loading = false; progress = nil; modelSaved = models.saved; UIApplication.shared.isIdleTimerDisabled = cameraRunning }
         do {
-            let model = try await models.obtain(); progress = nil
-            try await ai.load(model,sha256:models.variant.sha256) { [weak self] phase in Task { @MainActor in self?.status = phase } }
+            let model = try await models.obtain(), choice = models.variant; progress = nil
+            let report: @Sendable (String) -> Void = { [weak self] phase in Task { @MainActor in self?.status = phase } }
+            if choice.usesMLX {
+                try await ai.loadMLX(model,checks:choice.files.compactMap { file in file.sha256.map { (file.local,$0) } },progress:report)
+            } else {
+                try await ai.load(model,sha256:choice.files[0].sha256!,progress:report)
+            }
             aiReady = true; status = "\(models.variant.title)の準備ができました。"
         } catch {
             aiErrorDetail = error.localizedDescription
@@ -90,13 +95,13 @@ struct ScanNotice { let title: String, message: String, icon: String }
         catch { alert = error.localizedDescription }
     }
     /// Only one engine stays resident, so switching always unloads the current one first.
-    func selectVariant(_ value: GemmaVariant) async {
+    func selectVariant(_ value: AIModelChoice) async {
         guard value != models.variant, !loading, !aiBusy else { variant = models.variant; return }
         do { try await ai.unload() } catch { alert = error.localizedDescription; variant = models.variant; return }
         aiReady = false; models.variant = value; variant = value; modelSaved = models.saved
         status = modelSaved ? "\(value.title)に切り替えました。「保存したモデルで起動」で使えます。":"\(value.title)を選びました。モデルを保存すると使えます（\(value.summary)）。"
     }
-    func deleteModel(_ value: GemmaVariant) {
+    func deleteModel(_ value: AIModelChoice) {
         guard value != models.variant || !aiReady, !loading else { return }
         do { try models.delete(value); modelSaved = models.saved; status = "\(value.title)のモデルを削除しました。" } catch { alert = error.localizedDescription }
     }
