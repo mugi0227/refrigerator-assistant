@@ -61,6 +61,7 @@ if [ "${FRIDGE_GEMMA_SMOKE:-0}" = "1" ]; then
     -only-testing:FridgeRuntimeTests/GemmaImageSmokeTests \
     -only-testing:FridgeRuntimeTests/NativeDomainTests/testJapaneseFoodReplyAndExpiryEvidence \
     -only-testing:FridgeRuntimeTests/NativeDomainTests/testExpiryJSONJapaneseDateFormatsAndUnknownHeading \
+    -only-testing:FridgeRuntimeTests/NativeDomainTests/testExpiryJSONArrayFiltersManufactureButRejectsConflictingOrInvalidExpiry \
     -only-testing:FridgeRuntimeTests/NativeDomainTests/testExpiryJSONRejectsGuessesWrongTypesAndMalformedReplies "$@" test
   exit $?
 fi

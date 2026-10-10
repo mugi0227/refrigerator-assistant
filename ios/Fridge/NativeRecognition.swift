@@ -243,13 +243,36 @@ enum NativeReading {
         return value
     }
     static func expiryObservation(_ text: String) -> PrintedDate? {
+        guard text.count < 24000 else { return nil }
+        if let object = object(from:text) { return expiryObject(object) }
+        // Vision models sometimes list every printed date despite the single
+        // object instruction. Accept JSON arrays only when all non-manufacture
+        // rows validate and agree on one expiry; never just pick the first row.
+        if let a = text.firstIndex(of:"["), let b = text.lastIndex(of:"]"), a <= b,
+           let rows = try? JSONSerialization.jsonObject(with:Data(text[a...b].utf8)) as? [[String:Any]],
+           !rows.isEmpty, rows.count <= 8 {
+            var results: [PrintedDate] = []
+            for row in rows {
+                guard let raw = row["印字"] as? String else { return nil }
+                if raw.precomposedStringWithCompatibilityMapping.range(of:"製造|加工|包装|manufactur|packed",options:[.regularExpression,.caseInsensitive]) != nil, !expiryHeading(raw) { continue }
+                guard let result = expiryObject(row) else { return nil }
+                results.append(result)
+            }
+            guard let first = results.first, results.allSatisfy({$0.date == first.date && $0.type == first.type}) else { return nil }
+            return first
+        }
+        return expiryEvidence(text)
+    }
+    private static func expiryObject(_ object: [String:Any]) -> PrintedDate? {
+        guard object["読めた"] as? Bool == true, object["不確か"] as? Bool == false,
+              let date = object["日付"] as? String, let printed = object["印字"] as? String,
+              FoodRules.validDate(date), printedDate(printed) == date else { return nil }
+        return expiryEvidence(printed,date:date,claimedKind:object["期限の種類"])
+    }
+    private static func expiryEvidence(_ text: String, date suppliedDate: String? = nil, claimedKind: Any? = nil) -> PrintedDate? {
         let raw: String, date: String
-        let json = object(from:text)
-        if let object = json {
-            guard object["読めた"] as? Bool == true, object["不確か"] as? Bool == false,
-                  let value = object["日付"] as? String, let printed = object["印字"] as? String,
-                  FoodRules.validDate(value), printedDate(printed) == value else { return nil }
-            raw = printed; date = value
+        if let suppliedDate {
+            raw = text; date = suppliedDate
         } else {
             // The model transcribes the label; date parsing remains deterministic.
             // Require the heading, a single valid date, and no refusal/guess text.
@@ -265,7 +288,7 @@ enum NativeReading {
         guard !(best && use) else { return nil }
         // Check the model's classification against the printed heading. Older
         // JSON replies without this field still derive their type from evidence.
-        if let claimed = json?["期限の種類"] {
+        if let claimed = claimedKind {
             guard let kind = claimed as? String,
                   kind == (best ? "賞味期限":use ? "消費期限":"不明") else { return nil }
         }

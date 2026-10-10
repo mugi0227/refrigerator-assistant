@@ -132,6 +132,23 @@ final class NativeDomainTests: XCTestCase {
         XCTAssertNil(NativeReading.expiryObservation(#"{"印字":"賞味期限 2026.10.11"}"#))
         XCTAssertNil(NativeReading.expiryObservation(#"{"印字":"賞味期限 2026.10.11""#))
     }
+    func testExpiryJSONArrayFiltersManufactureButRejectsConflictingOrInvalidExpiry() throws {
+        let expiry: [String:Any] = ["読めた":true,"期限の種類":"消費期限","日付":"2026-11-03","印字":"消費期限 26.11.03","不確か":false]
+        let manufacture: [String:Any] = ["読めた":true,"期限の種類":"不明","日付":"2026-11-01","印字":"製造年月日 26.11.01","不確か":false]
+        func parse(_ rows: [[String:Any]]) throws -> PrintedDate? {
+            NativeReading.expiryObservation(String(decoding:try JSONSerialization.data(withJSONObject:rows),as:UTF8.self))
+        }
+        XCTAssertEqual(try parse([manufacture,expiry])?.date,"2026-11-03")
+        XCTAssertEqual(try parse([expiry,manufacture])?.type,"use_by")
+        XCTAssertNil(try parse([manufacture]))
+        var other = expiry; other["日付"] = "2026-11-04"; other["印字"] = "消費期限 26.11.04"
+        XCTAssertNil(try parse([expiry,other]))
+        other = expiry; other["日付"] = "2026-11-04"
+        XCTAssertNil(try parse([expiry,other]))
+        other = expiry; other["不確か"] = true
+        XCTAssertNil(try parse([expiry,other]))
+        XCTAssertNil(try parse([expiry,["読めた":false]]))
+    }
     func testFoodRegionCoordinatesRejectInventedOrInvalidPositions() {
         let json = #"{"kind":"produce","boxes":[{"label":"apple","count":2,"box_2d":[200,100,700,900]},{"label":"bad","count":1,"box_2d":[-1,0,1001,999]}]}"#
         let boxes = FoodRegion.parse(json)

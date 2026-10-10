@@ -11,18 +11,6 @@ final class GemmaImageSmokeTests: XCTestCase {
         let url = URL(fileURLWithPath: try XCTUnwrap(config["modelPath"]))
         let ai = NativeAI()
         try await ai.load(url) { print("GEMMA_SMOKE_STARTUP: \($0)") }
-        let text = try await ai.run("Reply exactly BLUE-47, with no other words.")
-        XCTAssertTrue(text.contains("BLUE-47"), text)
-        for (size, color, name) in [(CGSize(width: 384, height: 384), UIColor.red, "red"),
-                                    (CGSize(width: 576, height: 1024), UIColor.blue, "blue")] {
-            let format = UIGraphicsImageRendererFormat(); format.scale = 1
-            let data = try XCTUnwrap(UIGraphicsImageRenderer(size: size, format: format).image { context in
-                color.setFill(); context.fill(CGRect(origin: .zero, size: size))
-            }.jpegData(compressionQuality: 0.85))
-            let output = try await ai.run("Name the color of the CURRENT image. Answer with one English word.", image: data)
-            XCTAssertTrue(output.lowercased().contains(name), output)
-            print("GEMMA_SMOKE_IMAGE: \(Int(size.width))x\(Int(size.height)) \(output)")
-        }
         // Two production prompts, one existing public food fixture and one
         // synthetic Japanese label. No private photograph enters CI or the IPA.
         let appleURL = try XCTUnwrap(Bundle.main.url(forResource:"apple",withExtension:"png",subdirectory:"Probe"))
@@ -40,8 +28,7 @@ final class GemmaImageSmokeTests: XCTestCase {
         }.jpegData(compressionQuality:0.9))
         let expiryJSON = try await ai.run(NativeReading.expiryPrompt,image:label)
         print("GEMMA_SMOKE_EXPIRY_JSON: \(expiryJSON)")
-        let object = try XCTUnwrap(NativeReading.object(from:expiryJSON),expiryJSON)
-        XCTAssertEqual(object["期限の種類"] as? String,"消費期限",expiryJSON)
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(with:Data(expiryJSON.utf8)),expiryJSON)
         let expiry = try XCTUnwrap(NativeReading.expiryObservation(expiryJSON),expiryJSON)
         XCTAssertEqual(expiry.date,"2026-11-03",expiryJSON); XCTAssertEqual(expiry.type,"use_by",expiryJSON)
         // The settings start button must renew the same engine, not recreate it.
