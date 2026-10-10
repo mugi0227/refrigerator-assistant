@@ -330,8 +330,10 @@ struct NativeSettingsView: View {
                     Text("写真と在庫はこの端末で処理・保存します。")
                 }
                 Section("野菜の読み取り・献立の準備") {
-                    Text("Gemma 4 E2B").font(.headline)
-                    Text("保存済みの約2.6GBモデルがあれば、アプリを開くとAIを自動で起動します。リンゴ・赤画像の起動検査は省略します。").font(.subheadline)
+                    Picker("モデル",selection:Binding(get:{ model.variant },set:{ value in model.variant = value; Task { await model.selectVariant(value) } })) {
+                        ForEach(GemmaVariant.allCases) { Text($0.title).tag($0) }
+                    }.pickerStyle(.segmented).disabled(model.loading || model.aiBusy).accessibilityIdentifier("gemmaVariant")
+                    Text("\(model.variant.summary)。保存済みならアプリを開くと自動で起動します。E4Bは読み取りが正確な代わりに時間とメモリを多く使います。").font(.subheadline)
                     Text(model.status).textSelection(.enabled).accessibilityIdentifier("aiStatus")
                     if !model.aiErrorDetail.isEmpty { DisclosureGroup("エラーの詳細") { Text(model.aiErrorDetail).font(.caption).textSelection(.enabled) } }
                     if model.loading { ProgressView(value:model.progress); Button("ダウンロード・生成を中止") { model.cancelAI() } }
@@ -339,6 +341,9 @@ struct NativeSettingsView: View {
                     Button(model.modelSaved ? "保存したモデルで起動":"モデルを保存して起動") { Task { await model.loadAI() } }.disabled(model.loading || model.aiBusy).accessibilityIdentifier("loadAI")
                     Button("モデルをファイルから") { modelImport = true }.disabled(model.loading || model.aiBusy)
                     Button("メモリを解放") { Task { await model.unloadAI() } }.disabled(!model.aiReady || model.loading || model.aiBusy)
+                    ForEach(GemmaVariant.allCases.filter { $0 != model.variant && model.models.isSaved($0) }) { other in
+                        Button("保存済みの\(other.title)を削除",role:.destructive) { model.deleteModel(other) }.disabled(model.loading)
+                    }
                     Text("食品・献立ごとに会話を新しくし、前の画像や回答を引き継ぎません。起動したモデルは保持します。失敗時の記録は「ファイル」内のFridge → NativeAIに残ります。").font(.caption)
                     Button("最新のAIログを準備") {
                         do {

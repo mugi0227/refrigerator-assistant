@@ -28,7 +28,7 @@ actor NativeAI {
         let line = "\(ISO8601DateFormatter().string(from:Date())) \(value) | footprint=\(LiteRTChat.memoryFootprintBytes())\n"
         try? journal?.write(contentsOf:Data(line.utf8)); try? journal?.synchronize()
     }
-    func load(_ model: URL, progress: @escaping @Sendable (String) -> Void) async throws {
+    func load(_ model: URL, sha256: String = ReferenceProbe.modelSHA256, progress: @escaping @Sendable (String) -> Void) async throws {
         guard !busy else { throw FridgeError.message("AIは処理中です。") }
         busy = true; defer { busy = false }
         if let chat {
@@ -44,8 +44,8 @@ actor NativeAI {
         let phases = folder.appendingPathComponent("phases.txt"); FileManager.default.createFile(atPath:phases.path,contents:nil); journal = try FileHandle(forWritingTo:phases)
         capture = try ProbeStderr(url:folder.appendingPathComponent("native-stderr.txt"))
         do {
-            progress("保存済みモデルを照合中"); note("checksum")
-            guard try ReferenceProbe.sha256(model) == ReferenceProbe.modelSHA256 else { throw FridgeError.message("保存モデルの照合に失敗しました。ログを確認してください。") }
+            progress("保存済みモデルを照合中"); note("checksum \(model.lastPathComponent)")
+            guard try ReferenceProbe.sha256(model) == sha256 else { throw FridgeError.message("保存モデルの照合に失敗しました。ログを確認してください。") }
             progress("公開ライブラリを起動中"); note("LiteRTChat init, including upstream Hi warmup")
             let next = try await VerifiedGemma.makeRenewable(model)
             cancellation.set(next)
@@ -99,7 +99,7 @@ enum NativeReading {
         guard let text = row["text"] as? String else { return false }
         let confidence = row["confidence"] as? Double ?? 0
         // Dot-matrix packaging can receive low Vision confidence despite a
-        // complete heading/date. Require that evidence and two distinct frames.
+        // complete heading/date. Require that evidence; a later reading can still replace it.
         return confidence >= 0.55 || (confidence >= 0.30 && (printedDate(text) != nil || expiryHeading(text)))
     }
     static func printedDate(_ raw: String) -> String? {

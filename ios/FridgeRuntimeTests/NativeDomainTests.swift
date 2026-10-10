@@ -183,16 +183,34 @@ final class NativeDomainTests: XCTestCase {
         model.codes([["text":"4901330578909","x":"0.2","y":"0.3","width":"0.2","height":"0.1"]],store:store)
         XCTAssertEqual(model.marks.count,1)
         XCTAssertEqual(model.candidate?.barcode,"04901330578909")
-        func line(_ suffix: String) -> [[String:Any]] { [["text":"賞味期限 2026.10.31 \(suffix)","confidence":0.95,"x":0.2,"y":0.3,"width":0.4,"height":0.05,"metadataX":0.3,"metadataY":0.2,"metadataWidth":0.05,"metadataHeight":0.4]] }
-        model.acceptPrinted(line("AB"),stamp:1)
-        XCTAssertNil(model.candidate?.expiryDate); XCTAssertTrue(model.marks.contains { $0.isDate })
-        model.acceptPrinted(line("CD"),stamp:1); XCTAssertNil(model.candidate?.expiryDate)
-        model.acceptPrinted(line("CD"),stamp:2)
-        XCTAssertEqual(model.candidate?.expiryDate,"2026-10-31")
+        func line(_ date: String) -> [[String:Any]] { [["text":"賞味期限 \(date) AB","confidence":0.95,"x":0.2,"y":0.3,"width":0.4,"height":0.05,"metadataX":0.3,"metadataY":0.2,"metadataWidth":0.05,"metadataHeight":0.4]] }
+        // One frame is enough; the change is announced.
+        model.acceptPrinted(line("2026.10.31"),stamp:1)
+        XCTAssertEqual(model.candidate?.expiryDate,"2026-10-31"); XCTAssertTrue(model.marks.contains { $0.isDate })
         XCTAssertEqual(model.candidate?.expiryType,"best_before"); XCTAssertTrue(store.active.isEmpty)
-        model.registrationForReview(); model.acceptPrinted(line("EF"),stamp:3)
-        XCTAssertEqual(model.candidate?.expiryDate,"2026-10-31")
+        XCTAssertEqual(model.scanNotice?.title,"期限を反映"); XCTAssertTrue(model.expiryHighlight)
+        // A stale frame is ignored; a later different reading replaces the date.
+        model.acceptPrinted(line("2026.11.05"),stamp:1); XCTAssertEqual(model.candidate?.expiryDate,"2026-10-31")
+        model.acceptPrinted(line("2026.11.05"),stamp:2)
+        XCTAssertEqual(model.candidate?.expiryDate,"2026-11-05"); XCTAssertEqual(model.scanNotice?.title,"期限を更新")
+        model.registrationForReview(); model.acceptPrinted(line("2026.12.01"),stamp:3)
+        XCTAssertEqual(model.candidate?.expiryDate,"2026-11-05"); XCTAssertTrue(store.active.isEmpty)
         model.nextFood(); XCTAssertNil(model.candidate); XCTAssertTrue(model.marks.isEmpty)
+    }
+    @MainActor func testExpiryModeAdoptsWithoutBarcodeAndManualDateWins() {
+        let model = NativeAppModel(); model.cameraRunning = true
+        model.beginExpiry(); XCTAssertNotNil(model.candidate); XCTAssertNil(model.candidate?.barcode)
+        // No heading: treated as 賞味期限 so it can be registered in one tap.
+        model.acceptPrinted([["text":"期限 2027.03.04","confidence":0.9]],stamp:1)
+        XCTAssertEqual(model.candidate?.expiryDate,"2027-03-04"); XCTAssertEqual(model.candidate?.expiryType,"best_before")
+        model.acceptPrinted([["text":"消費期限 2027.03.04","confidence":0.9]],stamp:2)
+        XCTAssertEqual(model.candidate?.expiryType,"use_by")
+        model.acceptPrinted([["text":"期限 2027.03.04","confidence":0.9]],stamp:3)
+        XCTAssertEqual(model.candidate?.expiryType,"use_by")
+        model.acceptPrinted([],stamp:4); XCTAssertEqual(model.candidate?.expiryDate,"2027-03-04")
+        model.setManualExpiry(type:"best_before",date:"2027-05-01")
+        model.acceptPrinted([["text":"賞味期限 2027.06.01","confidence":0.9]],stamp:5)
+        XCTAssertEqual(model.candidate?.expiryDate,"2027-05-01")
     }
     @MainActor func testDemoDoesNotSaveAndPauseCancelsPending() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

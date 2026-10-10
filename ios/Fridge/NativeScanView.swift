@@ -63,8 +63,7 @@ struct NativeScanView: View {
             if let food = model.candidate {
                 ExpiryEditor(food:food) { type, date in
                     guard model.candidate?.id == food.id else { return }
-                    model.candidate?.expiryType = type; model.candidate?.expiryDate = date
-                    model.scanMessage = "期限を候補に反映しました。確認して登録してください。"
+                    model.setManualExpiry(type:type,date:date)
                 }
             }
         }
@@ -142,7 +141,9 @@ struct NativeScanView: View {
                     Button("この日付を使う") { model.applyAIExpiry() }.frame(maxWidth:.infinity,minHeight:44)
                         .background(.white,in:Capsule()).foregroundStyle(.black).accessibilityIdentifier("applyAIExpiry")
                 }.padding(12).background(Color(white:0.15),in:RoundedRectangle(cornerRadius:18))
-            } else if let food = model.candidate, !model.expiryMode {
+            } else if let food = model.candidate, model.expiryMode {
+                expiryResult(food).disabled(model.aiBusy)
+            } else if let food = model.candidate {
                 candidate(food).disabled(model.aiBusy)
             } else if let date = model.detectedDate {
                 Label("日付 \(date) · 商品を選んでください",systemImage:"calendar").font(.subheadline)
@@ -152,9 +153,11 @@ struct NativeScanView: View {
                     Button("AI読み取りを中止") { model.cancelAI(); model.scanMessage = "中止しています…" }.frame(minHeight:44)
                 } else {
                     // One read button: on-device text recognition first, Gemma only when that finds nothing.
+                    // Once a date is adopted, registering is the main action and re-reading is secondary.
+                    let dated = model.candidate?.expiryDate != nil
                     Button { Task { await model.readExpiryAuto() } } label: {
-                        Label(model.expiryPhotoData == nil ? "撮影して読み取る":"この写真を読み取る",systemImage:"text.viewfinder").font(.headline).frame(maxWidth:.infinity,minHeight:52)
-                    }.background(.mint,in:RoundedRectangle(cornerRadius:16)).foregroundStyle(.black).accessibilityIdentifier("stillOCR")
+                        Label(model.expiryPhotoData == nil ? "撮影して読み取る":"この写真を読み取る",systemImage:"text.viewfinder").font(.headline).frame(maxWidth:.infinity,minHeight:dated ? 44:52)
+                    }.background(dated ? Color.white.opacity(0.18):Color.mint,in:RoundedRectangle(cornerRadius:16)).foregroundStyle(dated ? Color.white:Color.black).accessibilityIdentifier("stillOCR")
                     if model.capturedImage != nil, model.cameraRunning { Button("期限を撮り直す") { model.beginExpiry() }.frame(minHeight:44) }
                 }
                 HStack {
@@ -271,6 +274,39 @@ struct NativeScanView: View {
             }.background(needsExpiry ? Color.white.opacity(0.18):Color.white,in:Capsule()).foregroundStyle(needsExpiry ? Color.white:Color.black).accessibilityIdentifier("reviewCandidate")
         }.padding(16).background(Color(white:0.15),in:RoundedRectangle(cornerRadius:22))
             .overlay(RoundedRectangle(cornerRadius:22).stroke(.white.opacity(0.2),lineWidth:1))
+    }
+    /// Live result while reading the expiry: what was taken, and registering without leaving the camera.
+    private func expiryResult(_ food: Food) -> some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack(spacing:12) {
+                Image(systemName:food.expiryDate == nil ? "calendar.badge.clock":"checkmark.circle.fill").font(.title2)
+                    .foregroundStyle(food.expiryDate == nil ? Color.white.opacity(0.6):Color.mint).frame(width:32)
+                VStack(alignment:.leading,spacing:2) {
+                    Text(food.name.isEmpty ? "読み取った期限":food.name).font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                    if let date = food.expiryDate {
+                        Text("\(FoodRules.expiryTypes[food.expiryType] ?? "期限") \(date)").font(.title2.bold()).accessibilityIdentifier("adoptedExpiry")
+                    } else {
+                        Text("まだ読み取れていません").font(.headline)
+                    }
+                }
+                Spacer()
+                if food.expiryDate != nil { Button("修正") { openExpiryEditor() }.font(.subheadline).frame(minWidth:44,minHeight:44) }
+            }
+            if food.expiryDate != nil {
+                Button { register(food) } label: {
+                    Label(model.scanMode == "consume" ? "この期限で消費":"この期限で登録",systemImage:"checkmark").font(.headline).frame(maxWidth:.infinity,minHeight:52)
+                }.background(.white,in:Capsule()).foregroundStyle(.black).accessibilityIdentifier("registerFromExpiry")
+            }
+        }.padding(14).background(Color(white:0.15),in:RoundedRectangle(cornerRadius:20))
+            .overlay(RoundedRectangle(cornerRadius:20).stroke(model.expiryHighlight ? Color.mint:Color.white.opacity(0.2),lineWidth:model.expiryHighlight ? 3:1))
+            .animation(.easeOut(duration:0.25),value:model.expiryHighlight)
+    }
+    /// A product name is still required; without one, the editor opens with the read date kept.
+    private func register(_ food: Food) {
+        if !food.name.isEmpty {
+            do { try model.confirm(food,store:store); resumeCamera(); return } catch { model.scanMessage = error.localizedDescription }
+        }
+        model.endExpiry(); model.registrationForReview(); editing = food
     }
     /// 商品 → 期限 → 登録, so the missing part is visible at a glance.
     private func steps(_ food: Food) -> some View {

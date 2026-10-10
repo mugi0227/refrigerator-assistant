@@ -33,7 +33,7 @@ final class FridgeUITests: XCTestCase {
             app.tabBars.buttons[tab].tap(); XCTAssertEqual(app.webViews.count,0)
             snapshot(app,"Native \(tab)")
         }
-        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.6 · ネイティブ版"].exists)
+        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.7 · ネイティブ版"].exists)
         app.tabBars.buttons["買い物"].tap(); app.textFields["買うもの"].tap(); app.textFields["買うもの"].typeText("bread"); app.buttons["追加"].tap()
         XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
         snapshot(app,"Shopping with memo")
@@ -49,6 +49,9 @@ final class FridgeUITests: XCTestCase {
         app.buttons["readExpiry"].tap()
         XCTAssertTrue(app.buttons["撮影を終える"].waitForExistence(timeout:5))
         XCTAssertFalse(app.buttons["aiShutter"].exists)
+        // The read date and an in-place register button are shown without leaving expiry mode.
+        XCTAssertTrue(app.staticTexts["adoptedExpiry"].exists); XCTAssertTrue(app.buttons["registerFromExpiry"].exists)
+        let expiry = XCTAttachment(screenshot:app.screenshot()); expiry.name = "Expiry mode adopted date"; expiry.lifetime = .keepAlways; add(expiry)
         app.buttons["撮影を終える"].tap()
         app.buttons["期限を手入力"].tap()
         XCTAssertTrue(app.buttons["applyExpiry"].waitForExistence(timeout:5))
