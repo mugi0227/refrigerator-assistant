@@ -78,11 +78,10 @@ struct ScanNotice { let title: String, message: String, icon: String }
         loading = true; aiReady = false; aiErrorDetail = ""; UIApplication.shared.isIdleTimerDisabled = true
         let task = Task { await performAIStartup() }
         startupTask = task
+        defer { startupTask = nil; loading = false; progress = nil; modelSaved = models.saved; UIApplication.shared.isIdleTimerDisabled = cameraRunning }
         await task.value
-        startupTask = nil
     }
     private func performAIStartup() async {
-        defer { loading = false; progress = nil; modelSaved = models.saved; UIApplication.shared.isIdleTimerDisabled = cameraRunning }
         do {
             // This write must succeed before download/checksum/native initialization begins.
             try startup.begin(model: models.variant.rawValue)

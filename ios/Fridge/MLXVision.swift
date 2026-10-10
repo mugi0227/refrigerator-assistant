@@ -14,6 +14,7 @@ final class MLXVision: @unchecked Sendable {
 
     static func load(_ directory: URL, report: @escaping @Sendable (String) -> Void) async throws -> MLXVision {
         try Task.checkCancellation()
+        report("MLX cache setup begin")
         Memory.cacheLimit = 20 * 1024 * 1024
         Memory.clearCache()
         // A conservative preflight, not a guarantee against peak allocation or jetsam.
