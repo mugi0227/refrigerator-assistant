@@ -57,8 +57,11 @@ if [ "${FRIDGE_GEMMA_SMOKE:-0}" = "1" ]; then
     -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
     -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
     -parallel-testing-enabled NO -test-timeouts-enabled YES \
-    -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 150 \
-    -only-testing:FridgeRuntimeTests/GemmaImageSmokeTests "$@" test
+    -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 180 \
+    -only-testing:FridgeRuntimeTests/GemmaImageSmokeTests \
+    -only-testing:FridgeRuntimeTests/NativeDomainTests/testJapaneseFoodReplyAndExpiryEvidence \
+    -only-testing:FridgeRuntimeTests/NativeDomainTests/testExpiryJSONJapaneseDateFormatsAndUnknownHeading \
+    -only-testing:FridgeRuntimeTests/NativeDomainTests/testExpiryJSONRejectsGuessesWrongTypesAndMalformedReplies "$@" test
   exit $?
 fi
 if [ "${FRIDGE_CAMERA_ONLY:-0}" = "1" ]; then

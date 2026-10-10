@@ -102,6 +102,36 @@ final class NativeDomainTests: XCTestCase {
         model.beginExpiry(); model.aiExpiryProposal = PrintedDate(date:"2028-01-01",type:"unknown",raw:"28.01.01")
         model.nextFood(); model.applyAIExpiry(); XCTAssertNil(model.candidate)
     }
+    func testExpiryJSONJapaneseDateFormatsAndUnknownHeading() throws {
+        let labels = [
+            ("賞味期限 27.02.01 LA","2027-02-01","賞味期限","best_before"),
+            ("消費期限 2026/10/11","2026-10-11","消費期限","use_by"),
+            ("賞味期限 ２０２６．１０．３１","2026-10-31","賞味期限","best_before"),
+            ("消費期限 2026年10月9日","2026-10-09","消費期限","use_by"),
+            ("賞味期限 26-1-5","2026-01-05","賞味期限","best_before"),
+            ("賞味期限27:02:01 LA","2027-02-01","賞味期限","best_before"),
+            ("26.10.11","2026-10-11","不明","unknown")
+        ]
+        for (label,date,kind,type) in labels {
+            let data = try JSONSerialization.data(withJSONObject:["読めた":true,"期限の種類":kind,"日付":date,"印字":label,"不確か":false])
+            let result = NativeReading.expiryObservation(String(decoding:data,as:UTF8.self))
+            XCTAssertEqual(result?.date,date,label); XCTAssertEqual(result?.type,type,label)
+        }
+    }
+    func testExpiryJSONRejectsGuessesWrongTypesAndMalformedReplies() throws {
+        func reply(_ label: String, date: String = "2026-10-11", kind: String = "賞味期限", uncertain: Bool = false) throws -> String {
+            String(decoding:try JSONSerialization.data(withJSONObject:["読めた":true,"期限の種類":kind,"日付":date,"印字":label,"不確か":uncertain]),as:UTF8.self)
+        }
+        XCTAssertNil(NativeReading.expiryObservation(try reply("賞味期限 2026/10/11",kind:"消費期限")))
+        XCTAssertNil(NativeReading.expiryObservation(try reply("26.10.11")))
+        XCTAssertNil(NativeReading.expiryObservation(try reply("賞味期限 2026/10/11",date:"2026-11-10")))
+        for label in ["賞味期限 10/11","賞味期限 2026年10月","賞味期限 2026.02.30","製造年月日 2026.10.11","賞味期限 2026.10.11 / 2026.10.12","賞味期限 消費期限 2026.10.11"] {
+            XCTAssertNil(NativeReading.expiryObservation(try reply(label)),label)
+        }
+        XCTAssertNil(NativeReading.expiryObservation(try reply("賞味期限 2026.10.11",uncertain:true)))
+        XCTAssertNil(NativeReading.expiryObservation(#"{"印字":"賞味期限 2026.10.11"}"#))
+        XCTAssertNil(NativeReading.expiryObservation(#"{"印字":"賞味期限 2026.10.11""#))
+    }
     func testFoodRegionCoordinatesRejectInventedOrInvalidPositions() {
         let json = #"{"kind":"produce","boxes":[{"label":"apple","count":2,"box_2d":[200,100,700,900]},{"label":"bad","count":1,"box_2d":[-1,0,1001,999]}]}"#
         let boxes = FoodRegion.parse(json)

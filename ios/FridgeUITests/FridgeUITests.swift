@@ -33,7 +33,7 @@ final class FridgeUITests: XCTestCase {
             app.tabBars.buttons[tab].tap(); XCTAssertEqual(app.webViews.count,0)
             snapshot(app,"Native \(tab)")
         }
-        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.10 · ネイティブ版"].exists)
+        XCTAssertTrue(app.buttons["loadAI"].exists); XCTAssertTrue(app.staticTexts["v0.3.11 · ネイティブ版"].exists)
         app.tabBars.buttons["買い物"].tap(); app.textFields["買うもの"].tap(); app.textFields["買うもの"].typeText("bread"); app.buttons["追加"].tap()
         XCTAssertTrue(app.buttons["bread"].waitForExistence(timeout:5))
         snapshot(app,"Shopping with memo")

@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       gemma_smoke:
-        description: 'Check E2B text, two image sizes and engine reuse only; skip the complete model/UI suites'
+        description: 'Check E2B images, food/expiry JSON prompts, parser cases and engine reuse; skip complete model/UI suites'
         type: boolean
         default: false
 permissions:
