@@ -4,6 +4,9 @@ set -euo pipefail
 export GIT_LFS_SKIP_SMUDGE=1
 cd "$(dirname "$0")/.."
 node scripts/prepare-ios.mjs
+mkdir -p ios/build
+swiftc ios/Fridge/AIStartupGuard.swift scripts/ai-startup-test/main.swift -o ios/build/test-ai-startup
+ios/build/test-ai-startup
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
 # MLX compiles Metal shaders; Xcode 26 ships the Metal toolchain as a separate component.

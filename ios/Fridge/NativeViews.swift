@@ -18,6 +18,18 @@ struct NativeRootView: View {
         }
         .environmentObject(store).environmentObject(model).tint(Theme.green)
         .preferredColorScheme(tab == 2 ? .dark:.light)
+        .safeAreaInset(edge: .top) {
+            if tab != 4, model.loading || model.aiRecoveryMessage != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(model.aiRecoveryMessage ?? model.status).font(.caption).foregroundStyle(.primary)
+                    if model.loading {
+                        Button("AIの起動を中止・自動起動をオフ") { model.stopAIStartup() }
+                    } else {
+                        Button("AI設定を開く") { tab = 4 }
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(12).background(.regularMaterial)
+            }
+        }
         .task { await model.autoStartAI() }
         .onChange(of:tab) { _, value in Task { if value == 2 { await model.startCamera(store:store) } else { await model.stopCamera() } } }
         .onChange(of:scene) { _, value in
@@ -333,10 +345,12 @@ struct NativeSettingsView: View {
                     Picker("モデル",selection:Binding(get:{ model.variant },set:{ value in model.variant = value; Task { await model.selectVariant(value) } })) {
                         ForEach(AIModelChoice.allCases) { Text($0.shortTitle).tag($0) }
                     }.pickerStyle(.segmented).disabled(model.loading || model.aiBusy).accessibilityIdentifier("gemmaVariant")
-                    Text("\(model.variant.summary)。保存済みならアプリを開くと自動で起動します。E4BとQwen3.5は読み取りが正確な代わりに時間とメモリを多く使います。").font(.subheadline)
+                    Text("\(model.variant.summary)。E4BとQwen3.5は時間とメモリを多く使います。Qwenの実機動作・精度は確認中です。").font(.subheadline)
+                    Toggle("保存済みAIを自動起動（Gemma）", isOn: Binding(get: { model.automaticAIStart }, set: { model.setAutomaticAIStart($0) })).accessibilityIdentifier("automaticAIStart")
+                    Text("更新後は自動起動がオフです。起動途中でアプリが終了した場合もオフに戻ります。Qwenはここをオンにしても手動で起動します。").font(.caption)
                     Text(model.status).textSelection(.enabled).accessibilityIdentifier("aiStatus")
                     if !model.aiErrorDetail.isEmpty { DisclosureGroup("エラーの詳細") { Text(model.aiErrorDetail).font(.caption).textSelection(.enabled) } }
-                    if model.loading { ProgressView(value:model.progress); Button("ダウンロード・生成を中止") { model.cancelAI() } }
+                    if model.loading { ProgressView(value:model.progress); Button("AIの起動を中止・自動起動をオフ") { model.stopAIStartup() } }
                     Text(model.modelSaved ? "モデル：保存済み":"モデル：未保存").font(.caption)
                     Button(model.modelSaved ? "保存したモデルで起動":"モデルを保存して起動") { Task { await model.loadAI() } }.disabled(model.loading || model.aiBusy).accessibilityIdentifier("loadAI")
                     Button("モデルをファイルから") { modelImport = true }.disabled(model.loading || model.aiBusy)
@@ -353,7 +367,7 @@ struct NativeSettingsView: View {
                             let combined = ["phases.txt","native-stderr.txt"].map { name in name+"\n"+((try? String(contentsOf:latest.appendingPathComponent(name),encoding:.utf8)) ?? "") }.joined(separator:"\n\n")
                             let output = root.appendingPathComponent("latest-log.txt"); try combined.write(to:output,atomically:true,encoding:.utf8); logURL = output
                         } catch { model.alert = error.localizedDescription }
-                    }.disabled(model.loading || model.aiBusy)
+                    }
                     if let logURL { ShareLink("AIログを共有",item:logURL) }
                 }
                 Section("読み取りと保存") {

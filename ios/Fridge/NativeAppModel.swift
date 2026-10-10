@@ -10,6 +10,8 @@ struct ScanNotice { let title: String, message: String, icon: String }
     @Published var aiReady = false
     @Published var aiBusy = false
     @Published var loading = false
+    @Published var automaticAIStart = false
+    @Published var aiRecoveryMessage: String?
     @Published var modelSaved = false
     @Published var variant = AIModelChoice.e2b
     @Published var status = "AIを使わず、手入力・バーコード・印字の読み取りができます。"
@@ -43,6 +45,8 @@ struct ScanNotice { let title: String, message: String, icon: String }
     @Published var expiryPhotoData: Data?
     @Published var scanDebug = ""
     private var autoStarted = false
+    private let startup = AIStartupGuard()
+    private var startupTask: Task<Void, Never>?
     let ai = NativeAI(), models = ModelStore()
     private var loop: Task<Void,Never>?, registration: Task<Void,Never>?
     private var generation = UUID(), lastStamp = 0.0, foodVote: String?
@@ -55,6 +59,13 @@ struct ScanNotice { let title: String, message: String, icon: String }
     private var confirmedExpiryID: String?
     init() {
         modelSaved = models.saved; variant = models.variant
+        automaticAIStart = startup.automaticStart
+        if let interrupted = startup.interruption {
+            aiRecoveryMessage = "前回は\(interrupted.phase)で終了しました。AIの自動起動を止めています。"
+            status = aiRecoveryMessage!
+        } else if models.saved && !automaticAIStart {
+            status = "AIの自動起動はオフです。モデルを選び、「保存したモデルで起動」で使えます。"
+        }
         models.onProgress = { [weak self] phase, bytes, total in
             Task { @MainActor in
                 self?.progress = total > 0 ? Double(bytes)/Double(total):nil
@@ -65,16 +76,39 @@ struct ScanNotice { let title: String, message: String, icon: String }
     func loadAI() async {
         guard !loading, !aiBusy else { return }
         loading = true; aiReady = false; aiErrorDetail = ""; UIApplication.shared.isIdleTimerDisabled = true
+        let task = Task { await performAIStartup() }
+        startupTask = task
+        await task.value
+        startupTask = nil
+    }
+    private func performAIStartup() async {
         defer { loading = false; progress = nil; modelSaved = models.saved; UIApplication.shared.isIdleTimerDisabled = cameraRunning }
         do {
+            // This write must succeed before download/checksum/native initialization begins.
+            try startup.begin(model: models.variant.rawValue)
+            aiRecoveryMessage = nil
+            defer { startup.finish() }
+            try Task.checkCancellation()
             let model = try await models.obtain(), choice = models.variant; progress = nil
-            let report: @Sendable (String) -> Void = { [weak self] phase in Task { @MainActor in self?.status = phase } }
+            try Task.checkCancellation()
+            let guardState = startup
+            let report: @Sendable (String) -> Void = { [weak self] phase in
+                guardState.phase(phase)
+                Task { @MainActor in
+                    guard let self, self.loading, self.startupTask?.isCancelled != true else { return }
+                    self.status = phase
+                }
+            }
             if choice.usesMLX {
                 try await ai.loadMLX(model,checks:choice.files.compactMap { file in file.sha256.map { (file.local,$0) } },progress:report)
             } else {
                 try await ai.load(model,sha256:choice.files[0].sha256!,progress:report)
             }
+            try Task.checkCancellation()
             aiReady = true; status = "\(models.variant.title)の準備ができました。"
+        } catch where error is CancellationError || Task.isCancelled {
+            try? await ai.unload()
+            status = "AIの起動を中止しました。モデルは保存したままです。"
         } catch {
             aiErrorDetail = error.localizedDescription
             status = aiErrorDetail.contains("per_layer_embedding_lookup_")
@@ -84,7 +118,16 @@ struct ScanNotice { let title: String, message: String, icon: String }
     }
     func autoStartAI() async {
         guard !autoStarted else { return }; autoStarted = true
+        guard startup.interruption == nil, automaticAIStart, !models.variant.usesMLX else { return }
         if models.saved { await loadAI() }
+    }
+    func setAutomaticAIStart(_ enabled: Bool) {
+        automaticAIStart = enabled; startup.automaticStart = enabled
+    }
+    func stopAIStartup() {
+        setAutomaticAIStart(false)
+        startupTask?.cancel(); models.cancel(); ai.cancellation.cancel()
+        status = "自動起動をオフにしました。起動を中止しています。処理が終わらない場合はアプリを終了して開き直してください。"
     }
     func unloadAI() async { do { try await ai.unload(); aiReady = false; status = "AIのメモリを解放しました。" } catch { alert = error.localizedDescription } }
     func importModel(_ url: URL) async {
@@ -267,6 +310,7 @@ struct ScanNotice { let title: String, message: String, icon: String }
         let previous = camera; camera = nil; previous?.onCodes = nil; await previous?.stop(); UIApplication.shared.isIdleTimerDisabled = false
     }
     func cancelAI() {
+        startupTask?.cancel()
         generation = UUID(); let token = generation; models.cancel(); ai.cancellation.cancel()
         Task {
             let partial = await ai.rawOutput()

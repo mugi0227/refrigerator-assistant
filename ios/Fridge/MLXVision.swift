@@ -4,6 +4,7 @@ import MLX
 import MLXLMCommon
 import MLXVLM
 import Tokenizers
+import os
 
 /// Qwen3.5 (vision) on MLX. Each request uses a fresh `ChatSession`, so no
 /// earlier image or answer carries over, matching the LiteRT Gemma path.
@@ -11,11 +12,24 @@ final class MLXVision: @unchecked Sendable {
     private let container: ModelContainer
     private init(_ container: ModelContainer) { self.container = container }
 
-    static func load(_ directory: URL) async throws -> MLXVision {
-        // Freed GPU buffers otherwise stay cached up to the memory limit; keep
-        // the app well below the iOS per-process ceiling.
-        Memory.cacheLimit = 64 * 1024 * 1024
-        return MLXVision(try await VLMModelFactory.shared.loadContainer(from: directory, using: TransformersTokenizerLoader()))
+    static func load(_ directory: URL, report: @escaping @Sendable (String) -> Void) async throws -> MLXVision {
+        try Task.checkCancellation()
+        Memory.cacheLimit = 20 * 1024 * 1024
+        Memory.clearCache()
+        // A conservative preflight, not a guarantee against peak allocation or jetsam.
+        // Check this process's remaining allowance, not the phone's installed RAM.
+        let weights = try directory.appendingPathComponent("model.safetensors").resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        let available = UInt64(os_proc_available_memory())
+        let required = UInt64(weights) + 512 * 1024 * 1024
+        report("MLX memory preflight: available=\(available), minimum=\(required), physical=\(ProcessInfo.processInfo.physicalMemory)")
+        guard available >= required else {
+            throw FridgeError.message(String(format: "Qwenを起動するメモリが足りません（このアプリの残り約%.1fGB、起動前の目安約%.1fGB）。E2Bへ切り替えてください。Qwenの保存データは残っています。", Double(available)/1e9, Double(required)/1e9))
+        }
+        report("MLX container load begin")
+        let container = try await VLMModelFactory.shared.loadContainer(from: directory, using: TransformersTokenizerLoader())
+        try Task.checkCancellation()
+        report("MLX container load end: \(Memory.snapshot())")
+        return MLXVision(container)
     }
 
     func stream(_ prompt: String, image: Data?) -> AsyncThrowingStream<String, Error> {

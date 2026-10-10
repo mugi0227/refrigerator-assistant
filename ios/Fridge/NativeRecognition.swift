@@ -69,7 +69,14 @@ actor NativeAI {
                 guard try ReferenceProbe.sha256(folder.appendingPathComponent(check.file)) == check.sha256 else { throw FridgeError.message("保存モデルの照合に失敗しました。モデルを削除して保存し直してください。") }
             }
             progress("MLXでモデルを読み込み中"); note("MLX VLM load")
-            vision = try await MLXVision.load(folder)
+            try Task.checkCancellation()
+            let output = journal
+            vision = try await MLXVision.load(folder, report: { line in
+                // Flush synchronously before native allocations; an actor task could
+                // remain queued when the process is killed inside the loader.
+                let entry = "\(ISO8601DateFormatter().string(from: Date())) \(line) | footprint=\(LiteRTChat.memoryFootprintBytes())\n"
+                try? output?.write(contentsOf: Data(entry.utf8)); try? output?.synchronize()
+            })
             note("READY: MLX vision model loaded"); progress("準備完了")
         } catch { note("ERROR \(error.localizedDescription)"); vision = nil; throw error }
     }
