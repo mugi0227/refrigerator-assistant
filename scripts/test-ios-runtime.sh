@@ -14,7 +14,7 @@ python3 - "$MODEL_PATH" <<'PY'
 import hashlib,json,re,sys
 from pathlib import Path
 p=Path(sys.argv[1]); source=Path('ios/Fridge/ModelStore.swift').read_text()
-expected=int(re.search(r'expectedBytes: Int64 = ([\d_]+)',source).group(1).replace('_',''))
+expected=int(re.search(r'expectedBytes: Int64 \{ self == \.e2b \? ([\d_]+)',source).group(1).replace('_',''))
 assert p.stat().st_size==expected, 'Incomplete real model fixture'
 print('Actual model fixture:',p.stat().st_size,'bytes; SHA256:',hashlib.file_digest(p.open('rb'),'sha256').hexdigest())
 Path('ios/FridgeRuntimeTests/Fixtures/config.json').write_text(json.dumps({'modelPath':str(p)}))
