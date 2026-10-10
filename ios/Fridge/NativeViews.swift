@@ -343,9 +343,10 @@ struct NativeSettingsView: View {
                 }
                 Section("野菜の読み取り・献立の準備") {
                     Picker("モデル",selection:Binding(get:{ model.variant },set:{ value in model.variant = value; Task { await model.selectVariant(value) } })) {
-                        ForEach(AIModelChoice.allCases) { Text($0.shortTitle).tag($0) }
+                        ForEach(AIModelChoice.allCases.filter(\.available)) { Text($0.shortTitle).tag($0) }
                     }.pickerStyle(.segmented).disabled(model.loading || model.aiBusy).accessibilityIdentifier("gemmaVariant")
-                    Text("\(model.variant.summary)。E4BとQwen3.5は時間とメモリを多く使います。Qwenの実機動作・精度は確認中です。").font(.subheadline)
+                    Text("\(model.variant.summary)。E4Bは時間とメモリを多く使います。").font(.subheadline)
+                    if !AIModelChoice.qwen35.available { Text("E2Bの復旧を優先し、この版はQwenの起動を一時停止しています。保存済みQwenは残っています。").font(.caption) }
                     Toggle("保存済みAIを自動起動（Gemma）", isOn: Binding(get: { model.automaticAIStart }, set: { model.setAutomaticAIStart($0) })).accessibilityIdentifier("automaticAIStart")
                     Text("更新後は自動起動がオフです。起動途中でアプリが終了した場合もオフに戻ります。Qwenはここをオンにしても手動で起動します。").font(.caption)
                     Text(model.status).textSelection(.enabled).accessibilityIdentifier("aiStatus")

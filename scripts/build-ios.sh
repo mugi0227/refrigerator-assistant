@@ -9,8 +9,7 @@ swiftc ios/Fridge/AIStartupGuard.swift ios/Fridge/AIEngineLifetime.swift scripts
 ios/build/test-ai-startup
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml
-# MLX compiles Metal shaders; Xcode 26 ships the Metal toolchain as a separate component.
-xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+# The Gemma recovery build uses the precompiled LiteRT framework.
 xcodebuild -project ios/Fridge.xcodeproj -scheme Fridge -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ios/build \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build

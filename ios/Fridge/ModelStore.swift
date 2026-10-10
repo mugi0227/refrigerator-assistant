@@ -19,6 +19,13 @@ enum AIModelChoice: String, CaseIterable, Identifiable {
          .qwen35:"約3.1GB · MLXで動作・試験的（Proなどメモリの多い機種向け）"][self]!
     }
     var usesMLX: Bool { self == .qwen35 }
+    var available: Bool {
+        #if canImport(MLXVLM)
+        return true
+        #else
+        return !usesMLX
+        #endif
+    }
     var base: String {
         [.e2b:"https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/",
          .e4b:"https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/",
@@ -70,8 +77,10 @@ final class ModelStore: NSObject, URLSessionDownloadDelegate {
         directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("FridgeModels", isDirectory: true)
         cache = directory.appendingPathComponent("runtime-cache", isDirectory: true)
-        variant = AIModelChoice(rawValue: UserDefaults.standard.string(forKey: "gemmaVariant") ?? "") ?? .e2b
+        let selected = AIModelChoice(rawValue: UserDefaults.standard.string(forKey: "gemmaVariant") ?? "") ?? .e2b
+        variant = selected.available ? selected : .e2b
         super.init()
+        if selected != variant { UserDefaults.standard.set(variant.rawValue, forKey: "gemmaVariant") }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var excluded = directory; var values = URLResourceValues(); values.isExcludedFromBackup = true
         try? excluded.setResourceValues(values)

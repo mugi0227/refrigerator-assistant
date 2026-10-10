@@ -1,5 +1,6 @@
 import Foundation
 import CoreImage
+#if canImport(MLXVLM)
 import MLX
 import MLXLMCommon
 import MLXVLM
@@ -67,3 +68,14 @@ private struct TokenizerBridge: MLXLMCommon.Tokenizer {
         catch Tokenizers.TokenizerError.missingChatTemplate { throw MLXLMCommon.TokenizerError.missingChatTemplate }
     }
 }
+#else
+/// Keep downloaded Qwen files intact while the recovery app isolates Gemma.
+final class MLXVision: @unchecked Sendable {
+    static func load(_ directory: URL, report: @escaping @Sendable (String) -> Void) async throws -> MLXVision {
+        throw FridgeError.message("この復旧版ではQwenの起動を一時停止しています。E2Bを選んでください。保存済みQwenは残っています。")
+    }
+    func stream(_ prompt: String, image: Data?) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { $0.finish(throwing: FridgeError.message("設定でE2Bを起動してください。")) }
+    }
+}
+#endif
