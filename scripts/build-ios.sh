@@ -5,7 +5,7 @@ export GIT_LFS_SKIP_SMUDGE=1
 cd "$(dirname "$0")/.."
 node scripts/prepare-ios.mjs
 mkdir -p ios/build
-swiftc ios/Fridge/AIStartupGuard.swift scripts/ai-startup-test/main.swift -o ios/build/test-ai-startup
+swiftc ios/Fridge/AIStartupGuard.swift ios/Fridge/AIEngineLifetime.swift scripts/ai-startup-test/main.swift -o ios/build/test-ai-startup
 ios/build/test-ai-startup
 if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
 xcodegen generate --spec ios/project.yml

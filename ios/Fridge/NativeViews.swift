@@ -352,7 +352,8 @@ struct NativeSettingsView: View {
                     if !model.aiErrorDetail.isEmpty { DisclosureGroup("エラーの詳細") { Text(model.aiErrorDetail).font(.caption).textSelection(.enabled) } }
                     if model.loading { ProgressView(value:model.progress); Button("AIの起動を中止・自動起動をオフ") { model.stopAIStartup() } }
                     Text(model.modelSaved ? "モデル：保存済み":"モデル：未保存").font(.caption)
-                    Button(model.modelSaved ? "保存したモデルで起動":"モデルを保存して起動") { Task { await model.loadAI() } }.disabled(model.loading || model.aiBusy).accessibilityIdentifier("loadAI")
+                    Button(model.modelSaved ? "保存したモデルで起動":"モデルを保存して起動") { Task { await model.loadAI() } }.disabled(model.loading || model.aiBusy || model.aiRelaunchRequired).accessibilityIdentifier("loadAI")
+                    Text("起動済みAIの切替やメモリ解放後は、Fridgeを完全に終了して開き直すと、選んだモデルを起動できます。").font(.caption)
                     Button("モデルをファイルから") { modelImport = true }.disabled(model.loading || model.aiBusy)
                     Button("メモリを解放") { Task { await model.unloadAI() } }.disabled(!model.aiReady || model.loading || model.aiBusy)
                     ForEach(AIModelChoice.allCases.filter { $0 != model.variant && model.models.isSaved($0) }) { other in

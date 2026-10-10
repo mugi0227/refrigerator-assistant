@@ -54,6 +54,15 @@ PY
   done
 }
 trap collect_results EXIT
+if [ "${FRIDGE_GEMMA_SMOKE:-0}" = "1" ]; then
+  xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
+    -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
+    -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+    -parallel-testing-enabled NO -test-timeouts-enabled YES \
+    -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 150 \
+    -only-testing:FridgeRuntimeTests/GemmaImageSmokeTests "$@" test
+  exit $?
+fi
 if [ "${FRIDGE_CAMERA_ONLY:-0}" = "1" ]; then
   xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
     -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
@@ -72,7 +81,7 @@ xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration De
   -resultBundlePath ios/build-runtime/Runtime.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
   -parallel-testing-enabled NO -test-timeouts-enabled YES \
   -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 480 \
-  -skip-testing:FridgeRuntimeTests/ReferenceProbeTests "$@" test || result=1
+  -skip-testing:FridgeRuntimeTests/ReferenceProbeTests -skip-testing:FridgeRuntimeTests/GemmaImageSmokeTests "$@" test || result=1
 xcodebuild -project ios/Fridge.xcodeproj -scheme FridgeRuntime -configuration Debug \
   -destination "platform=iOS Simulator,id=$SIMULATOR_ID,arch=arm64" -derivedDataPath ios/build-runtime \
   -resultBundlePath ios/build-runtime/Reference.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \

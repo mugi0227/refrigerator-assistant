@@ -13,6 +13,10 @@ on:
         description: 'Run camera, OCR, inventory and UI regression tests (AI code unchanged)'
         type: boolean
         default: false
+      gemma_smoke:
+        description: 'Check E2B text, two image sizes and engine reuse only; skip the complete model/UI suites'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -45,9 +49,10 @@ jobs:
         if: ${{ !inputs.quick_device && !cancelled() && steps.device.outcome == 'success' }}
         env:
           FRIDGE_CAMERA_ONLY: ${{ inputs.camera_only && '1' || '0' }}
+          FRIDGE_GEMMA_SMOKE: ${{ inputs.gemma_smoke && '1' || '0' }}
         run: bash scripts/test-ios-runtime.sh 2>&1 | tee runtime-test.log
       - name: Check inventory persistence on iOS Simulator
-        if: ${{ !inputs.quick_device }}
+        if: ${{ !inputs.quick_device && !inputs.gemma_smoke }}
         run: bash scripts/test-ios.sh 2>&1 | tee simulator-test.log
       - name: Save AltStore IPA
         uses: actions/upload-artifact@v4

@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import ImageIO
 import LiteRTFoundation
 
 final class NativeChatCancellation: @unchecked Sendable {
@@ -20,11 +21,13 @@ actor NativeAI {
     func rawOutput() -> String { latestOutput }
     private var chat: FridgeChat?
     private var vision: MLXVision?
+    private var lifetime = AIEngineLifetime()
     private var busy = false, turns = 0
     nonisolated let cancellation = NativeChatCancellation()
     private var capture: ProbeStderr?
     private var journal: FileHandle?
     func isReady() -> Bool { chat != nil || vision != nil }
+    func requiresRelaunch(for model: URL) -> Bool { lifetime.action(for: model) == .relaunch }
     func note(_ value: String) {
         let line = "\(ISO8601DateFormatter().string(from:Date())) \(value) | footprint=\(LiteRTChat.memoryFootprintBytes())\n"
         try? journal?.write(contentsOf:Data(line.utf8)); try? journal?.synchronize()
@@ -32,6 +35,7 @@ actor NativeAI {
     func load(_ model: URL, sha256: String = ReferenceProbe.modelSHA256, progress: @escaping @Sendable (String) -> Void) async throws {
         guard !busy else { throw FridgeError.message("AIは処理中です。") }
         busy = true; defer { busy = false }
+        guard lifetime.action(for: model) != .relaunch else { throw FridgeError.message(AIEngineLifetime.relaunchMessage) }
         if let chat {
             try await chat.resetConversation(); turns = 0
             note("conversation renewed; existing engine retained")
@@ -43,13 +47,15 @@ actor NativeAI {
         do {
             progress("保存済みモデルを照合中"); note("checksum \(model.lastPathComponent)")
             guard try ReferenceProbe.sha256(model) == sha256 else { throw FridgeError.message("保存モデルの照合に失敗しました。ログを確認してください。") }
+            try Task.checkCancellation()
             progress("公開ライブラリを起動中"); note("LiteRTChat init, including upstream Hi warmup")
+            lifetime.begin(model)
             let next = try await VerifiedGemma.makeRenewable(model)
             cancellation.set(next)
-            chat = next; note("READY: engine initialized; image startup probes omitted"); progress("準備完了")
+            chat = next; lifetime.ready(); note("READY: engine initialized; image startup probes omitted"); progress("準備完了")
         } catch { note("ERROR \(error.localizedDescription)"); cancellation.set(nil); chat = nil; throw error }
     }
-    /// Only one engine stays resident: any previous LiteRT or MLX model is dropped first.
+    /// Called only before this process's first native initialization.
     private func openLog() throws {
         cancellation.set(nil); chat = nil; vision = nil; turns = 0; capture?.restore(); capture = nil; try? journal?.close()
         let folder = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("NativeAI/\(UUID().uuidString)")
@@ -61,6 +67,7 @@ actor NativeAI {
     func loadMLX(_ folder: URL, checks: [(file: String, sha256: String)], progress: @escaping @Sendable (String) -> Void) async throws {
         guard !busy else { throw FridgeError.message("AIは処理中です。") }
         busy = true; defer { busy = false }
+        guard lifetime.action(for: folder) != .relaunch else { throw FridgeError.message(AIEngineLifetime.relaunchMessage) }
         if vision != nil { progress("準備完了"); return }
         try openLog()
         do {
@@ -71,19 +78,26 @@ actor NativeAI {
             progress("MLXでモデルを読み込み中"); note("MLX VLM load")
             try Task.checkCancellation()
             let output = journal
+            lifetime.begin(folder)
             vision = try await MLXVision.load(folder, report: { line in
                 // Flush synchronously before native allocations; an actor task could
                 // remain queued when the process is killed inside the loader.
                 let entry = "\(ISO8601DateFormatter().string(from: Date())) \(line) | footprint=\(LiteRTChat.memoryFootprintBytes())\n"
                 try? output?.write(contentsOf: Data(entry.utf8)); try? output?.synchronize()
             })
-            note("READY: MLX vision model loaded"); progress("準備完了")
+            lifetime.ready(); note("READY: MLX vision model loaded"); progress("準備完了")
         } catch { note("ERROR \(error.localizedDescription)"); vision = nil; throw error }
     }
     func run(_ prompt: String, image: Data? = nil) async throws -> String {
         guard !busy, chat != nil || vision != nil else { throw FridgeError.message("設定でAIを起動してください。") }
         busy = true; defer { busy = false }; turns += 1
+        latestOutput = ""
+        let started = Date()
         note("request \(turns), image=\(image != nil)")
+        if let image, let source = CGImageSourceCreateWithData(image as CFData, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+            note("input image: \(properties[kCGImagePropertyPixelWidth as String] ?? "?")x\(properties[kCGImagePropertyPixelHeight as String] ?? "?"), bytes=\(image.count)")
+        }
         do {
             if let vision {
                 let result = try await streamMLX(vision,prompt,image:image); note("response \(result)"); return result
@@ -96,7 +110,7 @@ actor NativeAI {
         catch {
             // Keep the engine. The next explicit request creates a new conversation;
             // rebuilding the entire model after a context error failed on iPhone.
-            note("ERROR \(error.localizedDescription)"); throw error
+            note("ERROR after \(Date().timeIntervalSince(started))s: \(error.localizedDescription)"); throw error
         }
     }
     private func stream(_ current: FridgeChat, _ prompt: String, image: Data?) async throws -> String {
@@ -131,7 +145,7 @@ actor NativeAI {
     }
     func unload() throws {
         guard !busy else { throw FridgeError.message("AIの処理が終了してから操作してください。") }
-        cancellation.set(nil); chat = nil; vision = nil; turns = 0; note("unloaded"); capture?.restore(); capture = nil; try? journal?.close(); journal = nil
+        cancellation.set(nil); chat = nil; vision = nil; lifetime.released(); turns = 0; note("unloaded; another native initialization requires app relaunch"); capture?.restore(); capture = nil; try? journal?.close(); journal = nil
     }
 }
 

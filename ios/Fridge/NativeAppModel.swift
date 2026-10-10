@@ -12,6 +12,7 @@ struct ScanNotice { let title: String, message: String, icon: String }
     @Published var loading = false
     @Published var automaticAIStart = false
     @Published var aiRecoveryMessage: String?
+    @Published var aiRelaunchRequired = false
     @Published var modelSaved = false
     @Published var variant = AIModelChoice.e2b
     @Published var status = "AIを使わず、手入力・バーコード・印字の読み取りができます。"
@@ -83,6 +84,7 @@ struct ScanNotice { let title: String, message: String, icon: String }
     }
     private func performAIStartup() async {
         do {
+            guard !(await ai.requiresRelaunch(for: models.model)) else { throw FridgeError.message(AIEngineLifetime.relaunchMessage) }
             // This write must succeed before download/checksum/native initialization begins.
             try startup.begin(model: models.variant.rawValue)
             aiRecoveryMessage = nil
@@ -107,9 +109,13 @@ struct ScanNotice { let title: String, message: String, icon: String }
             aiReady = true; status = "\(models.variant.title)の準備ができました。"
         } catch where error is CancellationError || Task.isCancelled {
             try? await ai.unload()
+            aiRelaunchRequired = await ai.requiresRelaunch(for: models.model)
+            if aiRelaunchRequired { aiRecoveryMessage = AIEngineLifetime.relaunchMessage }
             status = "AIの起動を中止しました。モデルは保存したままです。"
         } catch {
             aiErrorDetail = error.localizedDescription
+            aiRelaunchRequired = await ai.requiresRelaunch(for: models.model)
+            if aiRelaunchRequired { aiRecoveryMessage = AIEngineLifetime.relaunchMessage; status = AIEngineLifetime.relaunchMessage; return }
             status = aiErrorDetail.contains("per_layer_embedding_lookup_")
                 ? "AIの内部状態を復旧できませんでした。Fridgeを完全に終了して開き直し、保存したモデルで起動してください。モデルの再ダウンロードは不要です。"
                 : "AIを起動できませんでした。下の詳細を確認するか、AIログを共有してください。"
@@ -128,12 +134,24 @@ struct ScanNotice { let title: String, message: String, icon: String }
         startupTask?.cancel(); models.cancel(); ai.cancellation.cancel()
         status = "自動起動をオフにしました。起動を中止しています。処理が終わらない場合はアプリを終了して開き直してください。"
     }
-    func unloadAI() async { do { try await ai.unload(); aiReady = false; status = "AIのメモリを解放しました。" } catch { alert = error.localizedDescription } }
+    func unloadAI() async {
+        do {
+            try await ai.unload(); aiReady = false
+            aiRelaunchRequired = await ai.requiresRelaunch(for: models.model)
+            status = aiRelaunchRequired ? "AIのメモリを解放しました。次の起動にはFridgeを完全に終了して開き直してください。" : "AIのメモリを解放しました。"
+            if aiRelaunchRequired { aiRecoveryMessage = AIEngineLifetime.relaunchMessage }
+        } catch { alert = error.localizedDescription }
+    }
     func importModel(_ url: URL) async {
         guard !loading, !aiBusy else { return }; loading = true
         defer { loading = false; modelSaved = models.saved }
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-        do { try await ai.unload(); aiReady = false; try models.importFile(url); variant = models.variant; status = "\(variant.title)を保存しました。起動してお試しください。" }
+        do {
+            try await ai.unload(); aiReady = false; try models.importFile(url); variant = models.variant
+            aiRelaunchRequired = await ai.requiresRelaunch(for: models.model)
+            status = "\(variant.title)を保存しました。" + (aiRelaunchRequired ? AIEngineLifetime.relaunchMessage : "起動してお試しください。")
+            if aiRelaunchRequired { aiRecoveryMessage = AIEngineLifetime.relaunchMessage }
+        }
         catch { alert = error.localizedDescription }
     }
     /// Only one engine stays resident, so switching always unloads the current one first.
@@ -141,6 +159,12 @@ struct ScanNotice { let title: String, message: String, icon: String }
         guard value != models.variant, !loading, !aiBusy else { variant = models.variant; return }
         do { try await ai.unload() } catch { alert = error.localizedDescription; variant = models.variant; return }
         aiReady = false; models.variant = value; variant = value; modelSaved = models.saved
+        aiRelaunchRequired = await ai.requiresRelaunch(for: models.model)
+        if aiRelaunchRequired {
+            aiRecoveryMessage = AIEngineLifetime.relaunchMessage
+            status = "\(value.title)を次に起動するAIとして保存しました。" + AIEngineLifetime.relaunchMessage
+            return
+        }
         status = modelSaved ? "\(value.title)に切り替えました。「保存したモデルで起動」で使えます。":"\(value.title)を選びました。モデルを保存すると使えます（\(value.summary)）。"
     }
     func deleteModel(_ value: AIModelChoice) {
@@ -182,8 +206,10 @@ struct ScanNotice { let title: String, message: String, icon: String }
         guard aiReady, !aiBusy, !loading, !paused, expiryMode, let selected = candidate else { return }
         generation = UUID(); productLookup?.cancel(); aiExpiryProposal = nil
         let token = generation; aiBusy = true; scanMessage = "印字された期限をAIで読み取り中…"
+        var inferenceStarted: Date?
         defer {
             aiBusy = false
+            if token == generation, let inferenceStarted { lastSeconds = Date().timeIntervalSince(inferenceStarted) }
             if token != generation, capturedImage != nil, expiryMode { scanMessage = "中止しました。期限を撮り直せます。" }
         }
         do {
@@ -193,7 +219,7 @@ struct ScanNotice { let title: String, message: String, icon: String }
             else { throw FridgeError.message("期限を枠内に映してください。") }
             guard token == generation else { return }
             capturedImage = UIImage(data:data); expiryPhotoData = data; foodRegions = []; marks = []
-            let started = Date()
+            let started = Date(); inferenceStarted = started
             let response = try await ai.run(NativeReading.expiryPrompt,image:data)
             guard token == generation, candidate?.id == selected.id else { return }
             lastAnswer = response; lastSeconds = Date().timeIntervalSince(started)
@@ -401,8 +427,10 @@ struct ScanNotice { let title: String, message: String, icon: String }
         guard aiReady, !aiBusy, !loading, !paused else { return }
         resetScan(); scanMessage = "いまの画像を読み取り中…"
         let token = generation; aiBusy = true
+        var inferenceStarted: Date?
         defer {
             aiBusy = false
+            if token == generation, let inferenceStarted { lastSeconds = Date().timeIntervalSince(inferenceStarted) }
             if token != generation, capturedImage != nil { scanMessage = "読み取りを中止しました。「次の商品」で戻れます。" }
         }
         do {
@@ -412,7 +440,8 @@ struct ScanNotice { let title: String, message: String, icon: String }
             else { throw FridgeError.message("カメラを開始するか写真を選んでください。") }
             guard token == generation, !paused else { return }
             capturedImage = UIImage(data:image); currentImageData = image
-            let started = Date(); let response = try await ai.run(NativeReading.prompt,image:image)
+            let started = Date(); inferenceStarted = started
+            let response = try await ai.run(NativeReading.prompt,image:image)
             guard token == generation, !paused else { return }
             lastAnswer = response; lastSeconds = Date().timeIntervalSince(started)
             foodRegions = FoodRegion.parse(response)
